@@ -1,21 +1,44 @@
-# Ascend 910 版本apex安装使用说明
+# Ascend apex
 
 
 ## 生成全量代码及编译
-1、请确保npu版本的pytorch可以正常使用；
 
-2、进入到build目录，执行
+注：以下描述中的“根目录”指“Ascend apex的根目录”
+
+**获取原生apex源代码**
+
+从github上获取源代码，在根目录下执行
 ```
-bash build.sh
+git clone https://github.com/NVIDIA/apex.git
 ```
-会在当前根目录下apex-npu目录中生成npu适配全量代码，同时在dist目录中生成whl包。执行
+进入源代码目录，切换至commitid为4ef930c1c884fdca5f472ab2ce7cb9b505d26c1a的分支
 ```
-bash build.sh gen
+cd apex
+git checkout 4ef930c1c884fdca5f472ab2ce7cb9b505d26c1a
+cd ..
 ```
-只生成全量代码。
+
+**生成适配昇腾AI处理器的apex代码**
+
+进入到scripts目录，执行
+```
+bash gen.sh
+```
+会在根目录下apex目录中生成npu适配全量代码
+
+**编译apex的二进制包**
+
+1、请确保npu版本的pytorch可以正常使用（否则会影响apex的编译）；
+
+2、进入到根目录下apex目录，执行
+```
+python3 setup.py --cpp_ext --npu_float_status bdist_wheel
+```
+生成的二进制包在当前的dist目录下
 
 
 ## 安装
+
 进入dist目录，执行以下命令：
 ```
 pip3 uninstall apex
