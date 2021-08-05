@@ -1,6 +1,6 @@
-diff -Nur '--exclude=.git' apex/.gitignore apex-npu/.gitignore
+diff -Nur '--exclude=.git' apex/.gitignore apex-develop/.gitignore
 --- apex/.gitignore	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/.gitignore	1970-01-01 00:00:00.000000000 +0000
++++ apex-develop/.gitignore	1970-01-01 00:00:00.000000000 +0000
 @@ -1,5 +0,0 @@
 -apex.egg-info
 -dist
@@ -8,17 +8,17 @@ diff -Nur '--exclude=.git' apex/.gitignore apex-npu/.gitignore
 -docs/build
 -*~
 \ No newline at end of file
-diff -Nur '--exclude=.git' apex/.gitmodules apex-npu/.gitmodules
+diff -Nur '--exclude=.git' apex/.gitmodules apex-develop/.gitmodules
 --- apex/.gitmodules	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/.gitmodules	1970-01-01 00:00:00.000000000 +0000
++++ apex-develop/.gitmodules	1970-01-01 00:00:00.000000000 +0000
 @@ -1,4 +0,0 @@
 -[submodule "apex/contrib/csrc/multihead_attn/cutlass"]
 -	path = apex/contrib/csrc/multihead_attn/cutlass
 -	url = https://github.com/NVIDIA/cutlass.git
 -	branch = v1.2.0
-diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-npu/apex/amp/_initialize.py
+diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_initialize.py
 --- apex/apex/amp/_initialize.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/amp/_initialize.py	2021-06-17 07:10:45.373711948 +0000
++++ apex-develop/apex/amp/_initialize.py	2021-08-04 09:35:25.048667019 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -93,9 +93,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-npu/apex/amp/_initi
                          name, buf.type()))
  
  
-diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp/_process_optimizer.py
+diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex/amp/_process_optimizer.py
 --- apex/apex/amp/_process_optimizer.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/amp/_process_optimizer.py	2021-06-17 07:10:45.373711948 +0000
++++ apex-develop/apex/amp/_process_optimizer.py	2021-08-04 09:35:25.052667016 +0000
 @@ -1,9 +1,52 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -336,7 +336,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
                  continue
  
          # unscale() implements grads*(1/scale), so "scale" should be grads_have_scale/out_scale.
-@@ -123,130 +184,259 @@
+@@ -123,130 +184,257 @@
              scaler.unscale(
                  grads_needing_unscale,
                  grads_needing_unscale,
@@ -397,16 +397,16 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
 +            stash.all_fp32_from_fp32_grad_stash[i] = param.grad
 +            # Set up to leverage grad copy elision:
 +            param.grad = None
-+
+ 
+-    # for i, param in enumerate(stash.all_fp32_from_fp16_params):
+-    #     stash.all_fp32_from_fp16_grad_stash[i] = param.grad
 +
 +@torch.no_grad()
 +def combined_init_with_master_weights(self):
 +    stash = self._amp_stash
 +    if stash.already_combined:
 +        return
- 
--    # for i, param in enumerate(stash.all_fp32_from_fp16_params):
--    #     stash.all_fp32_from_fp16_grad_stash[i] = param.grad
++
 +    if (not self.accelerate) and (not self.is_npu_fused_optimizer):
 +        return
  
@@ -431,11 +431,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
 +    stash.main_fp16_grad_combine, stash.fp16_grad_list = get_grad_combined_tensor_from_param(stash.all_fp16_params)
 +
 +    for fp16_grad, fp32_from_fp16_param in zip(stash.fp16_grad_list, stash.all_fp32_from_fp16_params):
-+        if fp16_grad.storage().npu_format() == fp32_from_fp16_param.storage().npu_format():
-+            fp32_from_fp16_param.grad = torch.zeros_like(fp32_from_fp16_param)
-+        else:
-+            fp32_from_fp16_param.grad = torch.zeros_like(fp16_grad.to(torch.float))
++        if fp16_grad.storage().npu_format() != fp32_from_fp16_param.storage().npu_format():
 +            fp32_from_fp16_param.data = fp32_from_fp16_param.data.npu_format_cast(fp16_grad.storage().npu_format())
++        fp32_from_fp16_param.grad = torch.zeros_like(fp32_from_fp16_param)
 +
 +    stash.main_fp32_from_fp16_grad_combine, stash.fp32_from_fp16_grad_list = \
 +        get_grad_combined_tensor_from_param(stash.all_fp32_from_fp16_params)
@@ -663,7 +661,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
  
  
  #####################################################################################
-@@ -318,6 +508,420 @@
+@@ -318,6 +506,420 @@
          stash.lazy_init_called = True
  
  
@@ -1084,7 +1082,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
  def _process_optimizer(optimizer, properties):
      if hasattr(optimizer, "_amp_stash"):
          raise RuntimeError("A given optimizer should only be passed through amp.initialize once.")
-@@ -327,15 +931,64 @@
+@@ -327,15 +929,64 @@
      optimizer._amp_stash.lazy_init_called = False
      optimizer._amp_stash.already_patched = False
      optimizer._amp_stash.params_have_scaled_gradients = False
@@ -1150,7 +1148,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
      # TODO:  Centralize exposure and import error checking for the C backend.
      if multi_tensor_applier.available:
          import amp_C
-@@ -352,34 +1005,31 @@
+@@ -352,34 +1003,31 @@
  
          old_step = optimizer.step
          def new_step(self, closure=None):
@@ -1200,7 +1198,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
  
          if isinstance(optimizer, FusedSGD):
              optimizer._prepare_amp_backward = types.MethodType(
-@@ -391,10 +1041,35 @@
+@@ -391,10 +1039,35 @@
                  prepare_backward_with_master_weights, optimizer)
              optimizer._post_amp_backward = types.MethodType(
                  post_backward_with_master_weights, optimizer)
@@ -1236,7 +1234,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
          if isinstance(optimizer, FusedSGD):
              optimizer._prepare_amp_backward = types.MethodType(
                  prepare_backward_no_master_weights_FusedSGD, optimizer)
-@@ -406,7 +1081,18 @@
+@@ -406,7 +1079,18 @@
              optimizer._post_amp_backward = types.MethodType(
                  post_backward_no_master_weights, optimizer)
  
@@ -1255,7 +1253,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
  
      old_add_param_group = optimizer.add_param_group
  
-@@ -435,13 +1121,13 @@
+@@ -435,13 +1119,13 @@
              fp32_from_fp16_params_this_group = []
              for i, param in enumerate(new_group['params']):
                  if param.requires_grad:
@@ -1271,7 +1269,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
                          fp32_params_this_group.append(param)
                          new_group['params'][i] = param
                      else:
-@@ -471,10 +1157,10 @@
+@@ -471,10 +1155,10 @@
              #     param.grad = None
          else:
              for param in new_group['params']:
@@ -1284,9 +1282,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-npu/apex/amp
                      stash.all_fp32_params.append(param)
                      stash.all_fp32_grad_stash.append(None)
                  else:
-diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-npu/apex/amp/frontend.py
+diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/frontend.py
 --- apex/apex/amp/frontend.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/amp/frontend.py	2021-06-17 07:10:45.373711948 +0000
++++ apex-develop/apex/amp/frontend.py	2021-08-04 09:35:25.052667016 +0000
 @@ -19,6 +19,8 @@
              "keep_batchnorm_fp32" : None,
              "master_weights" : None,
@@ -1356,9 +1354,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-npu/apex/amp/frontend.
  
      maybe_print("After processing overrides, optimization options are:", True)
      for k, v in _amp_state.opt_properties.options.items():
-diff -Nur '--exclude=.git' apex/apex/amp/handle.py apex-npu/apex/amp/handle.py
+diff -Nur '--exclude=.git' apex/apex/amp/handle.py apex-develop/apex/amp/handle.py
 --- apex/apex/amp/handle.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/amp/handle.py	2021-06-17 07:10:45.373711948 +0000
++++ apex-develop/apex/amp/handle.py	2021-08-04 09:35:25.052667016 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -1404,9 +1402,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/handle.py apex-npu/apex/amp/handle.py
                                  if hasattr(opt, "most_recent_scale"):
                                      opt.most_recent_scale = 1.0
                                      opt.scale_set_by_backward = False
-diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-npu/apex/amp/scaler.py
+diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.py
 --- apex/apex/amp/scaler.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/amp/scaler.py	2021-06-17 07:10:45.373711948 +0000
++++ apex-develop/apex/amp/scaler.py	2021-08-04 09:35:25.052667016 +0000
 @@ -1,7 +1,25 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -1744,9 +1742,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-npu/apex/amp/scaler.py
      def clear_overflow_state(self):
          self._has_overflow = False
          if self.has_fused_kernel:
-diff -Nur '--exclude=.git' apex/apex/amp/utils.py apex-npu/apex/amp/utils.py
+diff -Nur '--exclude=.git' apex/apex/amp/utils.py apex-develop/apex/amp/utils.py
 --- apex/apex/amp/utils.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/amp/utils.py	2021-06-17 07:10:45.377711979 +0000
++++ apex-develop/apex/amp/utils.py	2021-08-04 09:35:25.052667016 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -1794,9 +1792,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/utils.py apex-npu/apex/amp/utils.py
                  raise RuntimeError("x and cache[x] both require grad, but x is not "
                                     "cache[x]'s parent.  This is likely an error.")
          # During eval, it's possible to end up caching casted weights with
-diff -Nur '--exclude=.git' apex/apex/contrib/sparsity/README.md apex-npu/apex/contrib/sparsity/README.md
+diff -Nur '--exclude=.git' apex/apex/contrib/sparsity/README.md apex-develop/apex/contrib/sparsity/README.md
 --- apex/apex/contrib/sparsity/README.md	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/contrib/sparsity/README.md	2021-06-17 07:10:45.389712070 +0000
++++ apex-develop/apex/contrib/sparsity/README.md	2021-08-04 09:35:25.064667004 +0000
 @@ -1,37 +1,37 @@
 -# Introduction to ASP
 -
@@ -1872,9 +1870,9 @@ diff -Nur '--exclude=.git' apex/apex/contrib/sparsity/README.md apex-npu/apex/co
 +
  A more thorough example can be found in `./test/toy_problem.py`. 
 \ No newline at end of file
-diff -Nur '--exclude=.git' apex/apex/fp16_utils/fp16_optimizer.py apex-npu/apex/fp16_utils/fp16_optimizer.py
+diff -Nur '--exclude=.git' apex/apex/fp16_utils/fp16_optimizer.py apex-develop/apex/fp16_utils/fp16_optimizer.py
 --- apex/apex/fp16_utils/fp16_optimizer.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/fp16_utils/fp16_optimizer.py	2021-06-17 07:10:45.389712070 +0000
++++ apex-develop/apex/fp16_utils/fp16_optimizer.py	2021-08-04 09:35:25.064667004 +0000
 @@ -1,554 +1,554 @@
 -import torch
 -from torch import nn
@@ -2984,9 +2982,9 @@ diff -Nur '--exclude=.git' apex/apex/fp16_utils/fp16_optimizer.py apex-npu/apex/
 +
 +    param_groups = property(_get_param_groups, _set_param_groups)
 +
-diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-npu/apex/optimizers/__init__.py
+diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-develop/apex/optimizers/__init__.py
 --- apex/apex/optimizers/__init__.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/optimizers/__init__.py	2021-06-17 07:10:45.389712070 +0000
++++ apex-develop/apex/optimizers/__init__.py	2021-08-04 09:35:25.064667004 +0000
 @@ -2,4 +2,10 @@
  from .fused_adam import FusedAdam
  from .fused_novograd import FusedNovoGrad
@@ -3001,9 +2999,9 @@ diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-npu/apex/optimi
 +from .npu_fused_lamb import NpuFusedLamb
 +from .lamb import Lamb
 \ No newline at end of file
-diff -Nur '--exclude=.git' apex/apex/parallel/LARC.py apex-npu/apex/parallel/LARC.py
+diff -Nur '--exclude=.git' apex/apex/parallel/LARC.py apex-develop/apex/parallel/LARC.py
 --- apex/apex/parallel/LARC.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/parallel/LARC.py	2021-06-17 07:10:45.389712070 +0000
++++ apex-develop/apex/parallel/LARC.py	2021-08-04 09:35:25.068666999 +0000
 @@ -86,8 +86,16 @@
                  for p in group['params']:
                      if p.grad is None:
@@ -3023,9 +3021,9 @@ diff -Nur '--exclude=.git' apex/apex/parallel/LARC.py apex-npu/apex/parallel/LAR
  
                      if param_norm != 0 and grad_norm != 0:
                          # calculate adaptive lr + weight decay
-diff -Nur '--exclude=.git' apex/apex/reparameterization/__init__.py apex-npu/apex/reparameterization/__init__.py
+diff -Nur '--exclude=.git' apex/apex/reparameterization/__init__.py apex-develop/apex/reparameterization/__init__.py
 --- apex/apex/reparameterization/__init__.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/reparameterization/__init__.py	2021-06-17 07:10:45.393712101 +0000
++++ apex-develop/apex/reparameterization/__init__.py	2021-08-04 09:35:25.068666999 +0000
 @@ -1,127 +1,127 @@
 -from .weight_norm import WeightNorm
 -from .reparameterization import Reparameterization
@@ -3281,9 +3279,9 @@ diff -Nur '--exclude=.git' apex/apex/reparameterization/__init__.py apex-npu/ape
 +        for m in modules:
 +            remove_reparameterization(m, reparameterization=reparameterization, remove_all=True)
 +        return module
-diff -Nur '--exclude=.git' apex/apex/reparameterization/reparameterization.py apex-npu/apex/reparameterization/reparameterization.py
+diff -Nur '--exclude=.git' apex/apex/reparameterization/reparameterization.py apex-develop/apex/reparameterization/reparameterization.py
 --- apex/apex/reparameterization/reparameterization.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/reparameterization/reparameterization.py	2021-06-17 07:10:45.393712101 +0000
++++ apex-develop/apex/reparameterization/reparameterization.py	2021-08-04 09:35:25.068666999 +0000
 @@ -1,151 +1,151 @@
 -import torch
 -from torch.nn.parameter import Parameter
@@ -3587,9 +3585,9 @@ diff -Nur '--exclude=.git' apex/apex/reparameterization/reparameterization.py ap
 +        module2use, name2use = Reparameterization.get_module_and_name(module, self.name)
 +        wn = getattr(module2use, name2use)
 +        self.evaluated = False
-diff -Nur '--exclude=.git' apex/apex/reparameterization/weight_norm.py apex-npu/apex/reparameterization/weight_norm.py
+diff -Nur '--exclude=.git' apex/apex/reparameterization/weight_norm.py apex-develop/apex/reparameterization/weight_norm.py
 --- apex/apex/reparameterization/weight_norm.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/apex/reparameterization/weight_norm.py	2021-06-17 07:10:45.393712101 +0000
++++ apex-develop/apex/reparameterization/weight_norm.py	2021-08-04 09:35:25.068666999 +0000
 @@ -1,78 +1,78 @@
 -import torch
 -from torch.nn.parameter import Parameter
@@ -3747,9 +3745,9 @@ diff -Nur '--exclude=.git' apex/apex/reparameterization/weight_norm.py apex-npu/
 +        names = [name + '_g', name + '_v']
 +        params = [Parameter(_norm(weight, dim).data), Parameter(weight.data)]
 +        return names, params
-diff -Nur '--exclude=.git' apex/setup.py apex-npu/setup.py
+diff -Nur '--exclude=.git' apex/setup.py apex-develop/setup.py
 --- apex/setup.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/setup.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/setup.py	2021-08-04 09:35:25.072666996 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3850,9 +3848,9 @@ diff -Nur '--exclude=.git' apex/setup.py apex-npu/setup.py
      packages=find_packages(exclude=('build',
                                      'csrc',
                                      'include',
-diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_add_param_group.py apex-npu/tests/L0/run_amp/test_add_param_group.py
+diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_add_param_group.py apex-develop/tests/L0/run_amp/test_add_param_group.py
 --- apex/tests/L0/run_amp/test_add_param_group.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L0/run_amp/test_add_param_group.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/tests/L0/run_amp/test_add_param_group.py	2021-08-04 09:35:25.072666996 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3940,9 +3938,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_add_param_group.py apex-np
                                        "opt_level = {}, how_to_zero = {}, zero_before_add = {}".format(
                                        opt_level, how_to_zero, zero_before_add))
  
-diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_basic_casts.py apex-npu/tests/L0/run_amp/test_basic_casts.py
+diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_basic_casts.py apex-develop/tests/L0/run_amp/test_basic_casts.py
 --- apex/tests/L0/run_amp/test_basic_casts.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L0/run_amp/test_basic_casts.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/tests/L0/run_amp/test_basic_casts.py	2021-08-04 09:35:25.072666996 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -4142,9 +4140,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_basic_casts.py apex-npu/te
  
      # TODO: maybe more tests on disabled casting?
  
-diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_cache.py apex-npu/tests/L0/run_amp/test_cache.py
+diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_cache.py apex-develop/tests/L0/run_amp/test_cache.py
 --- apex/tests/L0/run_amp/test_cache.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L0/run_amp/test_cache.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/tests/L0/run_amp/test_cache.py	2021-08-04 09:35:25.072666996 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -4277,9 +4275,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_cache.py apex-npu/tests/L0
  
  
  if __name__ == '__main__':
-diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_checkpointing.py apex-npu/tests/L0/run_amp/test_checkpointing.py
+diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_checkpointing.py apex-develop/tests/L0/run_amp/test_checkpointing.py
 --- apex/tests/L0/run_amp/test_checkpointing.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L0/run_amp/test_checkpointing.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/tests/L0/run_amp/test_checkpointing.py	2021-08-04 09:35:25.076666991 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -4320,9 +4318,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_checkpointing.py apex-npu/
                               'Parameter in state_dict not FLOAT')
  
      def train_step(self, model, optimizer, data, loss_ids):
-diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_larc.py apex-npu/tests/L0/run_amp/test_larc.py
+diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_larc.py apex-develop/tests/L0/run_amp/test_larc.py
 --- apex/tests/L0/run_amp/test_larc.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L0/run_amp/test_larc.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/tests/L0/run_amp/test_larc.py	2021-08-04 09:35:25.076666991 +0000
 @@ -1,5 +1,5 @@
  import unittest
 -
@@ -4364,9 +4362,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_larc.py apex-npu/tests/L0/
              )
  
              optimizer.zero_grad()
-diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_promotion.py apex-npu/tests/L0/run_amp/test_promotion.py
+diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_promotion.py apex-develop/tests/L0/run_amp/test_promotion.py
 --- apex/tests/L0/run_amp/test_promotion.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L0/run_amp/test_promotion.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/tests/L0/run_amp/test_promotion.py	2021-08-04 09:35:25.076666991 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -4462,9 +4460,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_promotion.py apex-npu/test
          with self.assertRaises(NotImplementedError):
              xs.exp_()
  
-diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_rnn.py apex-npu/tests/L0/run_amp/test_rnn.py
+diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_rnn.py apex-develop/tests/L0/run_amp/test_rnn.py
 --- apex/tests/L0/run_amp/test_rnn.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L0/run_amp/test_rnn.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/tests/L0/run_amp/test_rnn.py	2021-08-04 09:35:25.076666991 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -4522,9 +4520,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_rnn.py apex-npu/tests/L0/r
              output.data.float().sum().backward()
              self.assertEqual(x.grad.dtype, x.dtype)
  
-diff -Nur '--exclude=.git' apex/tests/L0/run_amp/utils.py apex-npu/tests/L0/run_amp/utils.py
+diff -Nur '--exclude=.git' apex/tests/L0/run_amp/utils.py apex-develop/tests/L0/run_amp/utils.py
 --- apex/tests/L0/run_amp/utils.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L0/run_amp/utils.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/tests/L0/run_amp/utils.py	2021-08-04 09:35:25.076666991 +0000
 @@ -1,7 +1,28 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -4587,9 +4585,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/utils.py apex-npu/tests/L0/run_
 +    npu_input1 = torch.from_numpy(input1)
 +    return npu_input1
 \ No newline at end of file
-diff -Nur '--exclude=.git' apex/tests/L0/run_test.py apex-npu/tests/L0/run_test.py
+diff -Nur '--exclude=.git' apex/tests/L0/run_test.py apex-develop/tests/L0/run_test.py
 --- apex/tests/L0/run_test.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L0/run_test.py	2021-06-17 07:10:45.397712131 +0000
++++ apex-develop/tests/L0/run_test.py	2021-08-04 09:35:25.076666991 +0000
 @@ -1,20 +1,71 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -4671,9 +4669,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_test.py apex-npu/tests/L0/run_test.
  
 -sys.exit(errcode)
 +    sys.exit(errcode)
-diff -Nur '--exclude=.git' apex/tests/L1/cross_product/run.sh apex-npu/tests/L1/cross_product/run.sh
+diff -Nur '--exclude=.git' apex/tests/L1/cross_product/run.sh apex-develop/tests/L1/cross_product/run.sh
 --- apex/tests/L1/cross_product/run.sh	2021-04-12 04:03:22.000000000 +0000
-+++ apex-npu/tests/L1/cross_product/run.sh	2021-06-17 07:10:45.401712162 +0000
++++ apex-develop/tests/L1/cross_product/run.sh	2021-08-04 09:35:25.076666991 +0000
 @@ -3,4 +3,5 @@
  # DATADIR="/home/mcarilli/Desktop/pt18data/apex_stale/examples/imagenet/bare_metal_train_val/"
  # DATADIR="/opt/home/apex/examples/imagenet/"
