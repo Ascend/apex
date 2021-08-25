@@ -146,21 +146,15 @@ def main():
     device = CALCULATE_DEVICE
     print("use ", CALCULATE_DEVICE)
 
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
+
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
     train_loader = torch.utils.data.DataLoader(
-        datasets.MNIST(args.data, train=True, download=True,
-                       transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.1307,), (0.3081,))
-                       ])),
+        datasets.MNIST(args.data, train=True, download=True, transform=transform),
         batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(
-        datasets.MNIST(args.data, train=False, transform=transforms.Compose([
-                           transforms.ToTensor(),
-                           transforms.Normalize((0.1307,), (0.3081,))
-                       ])),
+        datasets.MNIST(args.data, train=False, transform=transform),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
-
 
     model = Net().to(device)
     optimizer = apex.optimizers.Lamb(model.parameters(), lr=args.lr, weight_decay=args.wd, betas=(.9, .999), 

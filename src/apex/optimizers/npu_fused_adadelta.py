@@ -14,9 +14,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import defaultdict
+
 import torch
 from torch.optim.optimizer import Optimizer
-from collections import defaultdict
+
 from ..contrib.combine_tensors import combine_npu
 
 class NpuFusedAdadelta(Optimizer):
@@ -26,7 +28,8 @@ class NpuFusedAdadelta(Optimizer):
 
     This version of fused ADADELTA implements 1 fusions.
 
-      * A combine-tensor apply launch that batches the elementwise updates applied to all the model's parameters into one or a few kernel launches.
+      * A combine-tensor apply launch that batches the elementwise updates applied to all the model's parameters 
+        into one or a few kernel launches.
 
     :class:`apex.optimizers.NpuFusedAdadelta` may be used as a drop-in replacement for ``torch.optim.Adadelta``::
 
@@ -34,8 +37,8 @@ class NpuFusedAdadelta(Optimizer):
         ...
         opt.step()
 
-    :class:`apex.optimizers.NpuFusedAdadelta` should be used with Amp.  Currently, if you wish to use :class:`NpuFusedAdadelta` with Amp,
-    only ``opt_level O2`` can be choosed::
+    :class:`apex.optimizers.NpuFusedAdadelta` should be used with Amp.  Currently, if you wish to use :class:
+    `NpuFusedAdadelta` with Amp, only ``opt_level O1 and O2`` can be choosed::
 
         opt = apex.optimizers.NpuFusedAdadelta(model.parameters(), lr = ....)
         model, opt = amp.initialize(model, opt, opt_level="O2")
@@ -46,25 +49,25 @@ class NpuFusedAdadelta(Optimizer):
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
-        rho (float, optional): coefficient used for computing a running average
-            of squared gradients (default: 0.9)
-        eps (float, optional): term added to the denominator to improve
-            numerical stability (default: 1e-6)
-        lr (float, optional): coefficient that scale delta before it is applied
-            to the parameters (default: 1.0)
-        weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
+        lr (float, optional, default=1.0): coefficient that scale delta before it is applied
+            to the parameters
+        rho (float, optional, default=0.9): coefficient used for computing a running average
+            of squared gradients
+        eps (float, optional, default=1e-6): term added to the denominator to improve
+            numerical stability
+        weight_decay (float, optional, default=0): weight decay (L2 penalty)
 
     __ https://arxiv.org/abs/1212.5701
     """
 
     def __init__(self, params, lr=1.0, rho=0.9, eps=1e-6, weight_decay=0):
-        if not 0.0 <= lr:
+        if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
-        if not 0.0 <= rho <= 1.0:
+        if rho < 0.0 or rho > 1.0:
             raise ValueError("Invalid rho value: {}".format(rho))
-        if not 0.0 <= eps:
+        if eps < 0.0:
             raise ValueError("Invalid epsilon value: {}".format(eps))
-        if not 0.0 <= weight_decay:
+        if weight_decay < 0.0:
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
 
         defaults = dict(lr=lr, rho=rho, eps=eps, weight_decay=weight_decay)
@@ -88,7 +91,6 @@ class NpuFusedAdadelta(Optimizer):
             state['acc_delta'] = acc_delta_tmp
 
     def _combine_group_param_states(self, group_index):
-        group = self.param_groups[group_index]
         stash = self._amp_stash
         group_params_list = stash.params_lists_indexed_by_group[group_index]
 
@@ -133,10 +135,10 @@ class NpuFusedAdadelta(Optimizer):
             return
 
         stash.combined_param_states_indexed_by_group = []
-        for group in self.param_groups:
+        for _ in self.param_groups:
             stash.combined_param_states_indexed_by_group.append([])
 
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             self._combine_group_param_states(i)
         stash.param_states_are_combined_by_group = True
 
@@ -178,12 +180,6 @@ class NpuFusedAdadelta(Optimizer):
 
     @torch.no_grad()
     def step(self, closure=None):
-        """Performs a single optimization step.
-
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
         if not hasattr(self, "_amp_stash"):
             raise RuntimeError('apex.optimizers.NpuFusedAdadelta should be used with AMP.')
 
@@ -198,8 +194,7 @@ class NpuFusedAdadelta(Optimizer):
             with torch.enable_grad():
                 loss = closure()
 
-        stash = self._amp_stash
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             self._group_step(i)
 
         return loss

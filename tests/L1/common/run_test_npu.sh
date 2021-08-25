@@ -26,7 +26,7 @@ DATADIR=$2
 
 if [ "$1" == "single_npu" ]
 then
-  BASE_CMD="python main_amp_npu.py -a resnet50 --b 128 --workers 4 --deterministic --prints-to-process 5 "
+  BASE_CMD="python main_amp.py -a resnet50 --b 128 --workers 4 --deterministic --prints-to-process 5 "
 fi
 if [ $# == 3 ]
 then
