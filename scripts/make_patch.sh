@@ -39,7 +39,6 @@ mv $SRC_DIR/csrc/npu_float_status temp/src/csrc
 mv $SRC_DIR/tests/L0/run_optimizers/test_lamb_mnist.py temp/tests/L0/run_optimizers
 mv $SRC_DIR/tests/L0/device.py temp/tests/L0
 mv $SRC_DIR/tests/L1/common/compare_npu.py temp/tests/L1/common
-mv $SRC_DIR/tests/L1/common/main_amp_npu.py temp/tests/L1/common
 mv $SRC_DIR/tests/L1/common/run_test_npu.sh temp/tests/L1/common
 
 mv $SRC_DIR/README.en.md temp

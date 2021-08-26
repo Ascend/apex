@@ -15,31 +15,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""PyTorch optimization for BERT model."""
-
 import math
 from collections import defaultdict
+
 import torch
 from torch.optim import Optimizer
 from torch.optim.optimizer import required
+
 from ..contrib.combine_tensors import combine_npu
 
-def warmup_cosine(x, warmup=0.002):
+WARMUP_DEFAULT = 0.002
+DEGREE_DEFAULT = 0.5
+
+def warmup_cosine(x, warmup=WARMUP_DEFAULT):
     if x < warmup:
         return x/warmup
     return 0.5 * (1.0 + torch.cos(math.pi * x))
 
-def warmup_constant(x, warmup=0.002):
+def warmup_constant(x, warmup=WARMUP_DEFAULT):
     if x < warmup:
         return x/warmup
     return 1.0
 
-def warmup_linear(x, warmup=0.002):
+def warmup_linear(x, warmup=WARMUP_DEFAULT):
     if x < warmup:
         return x/warmup
-    return max((x - 1. )/ (warmup - 1.), 0.)
+    return max((x - 1.)/(warmup - 1.), 0.)
     
-def warmup_poly(x, warmup=0.002, degree=0.5):
+def warmup_poly(x, warmup=WARMUP_DEFAULT, degree=DEGREE_DEFAULT):
     if x < warmup:
         return x/warmup
     return (1.0 - x)**degree
@@ -71,17 +74,17 @@ class NpuFusedBertAdam(Optimizer):
                  b1=0.9, b2=0.99, e=1e-6, weight_decay=0.01,
                  max_grad_norm=-1):
         if lr is not required and lr < 0.0:
-            raise ValueError("Invalid learning rate: {} - should be >= 0.0".format(lr))
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if (warmup < 0.0 and warmup != -1) or warmup >= 1.0:
+            raise ValueError("Invalid warmup: {}".format(warmup))
         if schedule not in SCHEDULES:
             raise ValueError("Invalid schedule parameter: {}".format(schedule))
-        if not 0.0 <= warmup < 1.0 and not warmup == -1:
-            raise ValueError("Invalid warmup: {} - should be in [0.0, 1.0[ or -1".format(warmup))
-        if not 0.0 <= b1 < 1.0:
-            raise ValueError("Invalid b1 parameter: {} - should be in [0.0, 1.0[".format(b1))
-        if not 0.0 <= b2 < 1.0:
-            raise ValueError("Invalid b2 parameter: {} - should be in [0.0, 1.0[".format(b2))
-        if not e >= 0.0:
-            raise ValueError("Invalid epsilon value: {} - should be >= 0.0".format(e))
+        if b1 < 0.0 or b1 >= 1.0:
+            raise ValueError("Invalid b1 parameter: {}".format(b1))
+        if b2 < 0.0 or b2 >= 1.0:
+            raise ValueError("Invalid b2 parameter: {}".format(b2))
+        if e < 0.0:
+            raise ValueError("Invalid epsilon value: {}".format(e))
         defaults = dict(lr=lr, schedule=schedule, warmup=warmup, t_total=t_total,
                         b1=b1, b2=b2, e=e, weight_decay=weight_decay,
                         max_grad_norm=max_grad_norm)
@@ -108,7 +111,6 @@ class NpuFusedBertAdam(Optimizer):
             state['exp_avg_sq'] = exp_avg_sq_tmp
 
     def _combine_group_param_states(self, group_index):
-        group = self.param_groups[group_index]
         stash = self._amp_stash
         group_params_list = stash.params_lists_indexed_by_group[group_index]
 
@@ -121,7 +123,6 @@ class NpuFusedBertAdam(Optimizer):
             for p in params:
                 if p.grad is None:
                     continue
-                grad = p.grad
 
                 self._init_param_state(p)
                 state = self.state[p]
@@ -152,10 +153,10 @@ class NpuFusedBertAdam(Optimizer):
             return
 
         stash.combined_param_states_indexed_by_group = []
-        for group in self.param_groups:
+        for _ in self.param_groups:
             stash.combined_param_states_indexed_by_group.append([])
 
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             self._combine_group_param_states(i)
         stash.param_states_are_combined_by_group = True
 
@@ -178,7 +179,7 @@ class NpuFusedBertAdam(Optimizer):
             exp_avg, exp_avg_sq = combined_param_state['exp_avg'], combined_param_state['exp_avg_sq']
 
             if group['max_grad_norm'] > 0 and self.global_grad_norm != float('inf') and self.global_grad_norm > 1:
-                    combined_grad /= self.global_grad_norm
+                combined_grad /= self.global_grad_norm
 
             exp_avg.mul_(beta1).add_(1 - beta1, combined_grad)
             exp_avg_sq.mul_(beta2).addcmul_(1 - beta2, combined_grad, combined_grad)
@@ -199,7 +200,7 @@ class NpuFusedBertAdam(Optimizer):
 
     def get_global_grad_norm(self):
         self.global_grad_norm = 0
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             for combined_group_grads in self._amp_stash.combined_grads_indexed_by_group[i]:
                 if combined_group_grads is not None:
                     self.global_grad_norm += combined_group_grads.pow(2).sum()
@@ -218,8 +219,7 @@ class NpuFusedBertAdam(Optimizer):
         if self.max_grad_norm > 0:
             self.get_global_grad_norm()
 
-        stash = self._amp_stash
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             self._group_step(i)
 
         return loss

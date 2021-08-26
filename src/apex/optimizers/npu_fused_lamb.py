@@ -16,10 +16,11 @@
 
 """NpuFusedLamb optimizer."""
 
-import math
+from collections import defaultdict
+
 import torch
 from torch.optim.optimizer import Optimizer
-from collections import defaultdict
+
 from ..contrib.combine_tensors import combine_npu
 
 class NpuFusedLamb(Optimizer):
@@ -30,15 +31,15 @@ class NpuFusedLamb(Optimizer):
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
-        lr (float, optional): learning rate (default: 1e-3)
-        betas (Tuple[float, float], optional): coefficients used for computing
-            running averages of gradient and its square (default: (0.9, 0.999))
-        eps (float, optional): term added to the denominator to improve
-            numerical stability (default: 1e-8)
-        weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
+        lr (float, optional, default=1e-3): learning rate
+        betas (Tuple[float, float], optional, default=(0.9, 0.999)): coefficients used for computing
+            running averages of gradient and its square
+        eps (float, optional, default=1e-8): term added to the denominator to improve
+            numerical stability
+        weight_decay (float, optional, default=0): weight decay (L2 penalty)
         adam (bool, optional): always use trust ratio = 1, which turns this into
             Adam. Useful for comparison purposes.
-        use_global_grad_norm(bool, optional): use global grad norm (default: False)
+        use_global_grad_norm(bool, optional, default=False): use global grad norm
 
     .. _Large Batch Optimization for Deep Learning: Training BERT in 76 minutes:
         https://arxiv.org/abs/1904.00962
@@ -46,14 +47,14 @@ class NpuFusedLamb(Optimizer):
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6,
                  weight_decay=0, adam=False, use_global_grad_norm=False):
-        if not 0.0 <= lr:
+        if lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
-        if not 0.0 <= eps:
-            raise ValueError("Invalid epsilon value: {}".format(eps))
-        if not 0.0 <= betas[0] < 1.0:
+        if betas[0] < 0.0 or betas[0] >= 1.0:
             raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
-        if not 0.0 <= betas[1] < 1.0:
+        if betas[1] < 0.0 or betas[1] >= 1.0:
             raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
+        if eps < 0.0:
+            raise ValueError("Invalid epsilon value: {}".format(eps))
         defaults = dict(lr=lr, betas=betas, eps=eps,
                         weight_decay=weight_decay)
         self.adam = adam
@@ -128,7 +129,7 @@ class NpuFusedLamb(Optimizer):
         stash.combined_param_pows_indexed_by_group = []
         stash.combined_adam_step_pows_indexed_by_group = []
 
-        for group in self.param_groups:
+        for _ in self.param_groups:
             stash.trust_ratio_lists_indexed_by_group.append([])
             stash.param_pow_lists_indexed_by_group.append([])
             stash.adam_step_pow_lists_indexed_by_group.append([])
@@ -137,7 +138,7 @@ class NpuFusedLamb(Optimizer):
             stash.combined_param_pows_indexed_by_group.append([])
             stash.combined_adam_step_pows_indexed_by_group.append([])
 
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             self._combine_middle_vars(i)
         self.middle_vars_are_combined_by_group = True
 
@@ -187,10 +188,10 @@ class NpuFusedLamb(Optimizer):
             return
 
         stash.combined_param_states_indexed_by_group = []
-        for group in self.param_groups:
+        for _ in self.param_groups:
             stash.combined_param_states_indexed_by_group.append([])
 
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             self._combine_group_param_states(i)
         stash.param_states_are_combined_by_group = True
 
@@ -209,13 +210,10 @@ class NpuFusedLamb(Optimizer):
         for p in group['params']:
             if p.grad is None:
                 continue
-            grad = p.grad
-            if grad.is_sparse:
-                raise RuntimeError('NpuFusedLamb does not support sparse gradients, '
-                                   'please consider SparseAdam instead.')
             state_p = self.state[p]
             state_p['step'] += 1
         beta1, beta2 = group['betas']
+        step_size = group['lr']
 
         stash = self._amp_stash
         combined_group_params = stash.combined_params_indexed_by_group[group_index]
@@ -253,8 +251,6 @@ class NpuFusedLamb(Optimizer):
             exp_avg.mul_(beta1).add_(combined_grad, alpha=1 - beta1)
             exp_avg_sq.mul_(beta2).addcmul_(combined_grad, combined_grad, value=1 - beta2)
 
-            step_size = group['lr']
-
             adam_step = exp_avg / exp_avg_sq.sqrt().add(group['eps'])
             if group['weight_decay'] != 0:
                 adam_step.add_(combined_param, alpha=group['weight_decay'])
@@ -279,13 +275,6 @@ class NpuFusedLamb(Optimizer):
 
     @torch.no_grad()
     def step(self, closure=None):
-        """Performs a single optimization step.
-
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
-
         if not hasattr(self, "_amp_stash"):
             raise RuntimeError('apex.optimizers.NpuFusedLamb should be used with AMP.')
 
@@ -298,12 +287,12 @@ class NpuFusedLamb(Optimizer):
 
         loss = None
         if closure is not None:
-            loss = closure()
+            with torch.enable_grad():
+                loss = closure()
 
-        stash = self._amp_stash
         if self.use_global_grad_norm:
             self.global_grad_norm = self._get_global_grad_norm()
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             self._group_step(i)
 
         return loss

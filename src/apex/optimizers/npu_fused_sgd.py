@@ -14,10 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections import defaultdict
+
 import torch
 from torch.optim.optimizer import Optimizer, required
-from collections import defaultdict
+
 from ..contrib.combine_tensors import combine_npu
+
+LR_MIN = 0.0
+MOMENTUM_MIN = 0.0
+DAMPENING_DEFAULT = 0.0
+WEIGHT_DECAY_MIN = 0.0
 
 class NpuFusedSGD(Optimizer):
     r"""Implements stochastic gradient descent (optionally with momentum).
@@ -27,7 +34,8 @@ class NpuFusedSGD(Optimizer):
 
     This version of fused SGD implements 1 fusions.
 
-      * A combine-tensor apply launch that batches the elementwise updates applied to all the model's parameters into one or a few kernel launches.
+      * A combine-tensor apply launch that batches the elementwise updates applied to all the model's parameters
+        into one or a few kernel launches.
 
     :class:`apex.optimizers.NpuFusedSGD` may be used as a drop-in replacement for ``torch.optim.SGD``::
 
@@ -35,8 +43,8 @@ class NpuFusedSGD(Optimizer):
         ...
         opt.step()
 
-    :class:`apex.optimizers.FusedSGD` should be used with Amp.  Currently, if you wish to use :class:`NpuFusedSGD` with Amp,
-    only ``opt_level O2`` can be choosed::
+    :class:`apex.optimizers.FusedSGD` should be used with Amp.  Currently, if you wish to use :class:`NpuFusedSGD`
+    with Amp, only ``opt_level O1 and O2`` can be choosed::
 
         opt = apex.optimizers.NpuFusedSGD(model.parameters(), lr = ....)
         model, opt = amp.initialize(model, opt, opt_level="O2")
@@ -50,59 +58,26 @@ class NpuFusedSGD(Optimizer):
         params (iterable): iterable of parameters to optimize or dicts defining
             parameter groups
         lr (float): learning rate
-        momentum (float, optional): momentum factor (default: 0)
-        weight_decay (float, optional): weight decay (L2 penalty) (default: 0)
-        dampening (float, optional): dampening for momentum (default: 0)
-        nesterov (bool, optional): enables Nesterov momentum (default: False)
-
-    Example:
-        >>> optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9)
-        >>> optimizer.zero_grad()
-        >>> loss_fn(model(input), target).backward()
-        >>> optimizer.step()
+        momentum (float, optional, default=0): momentum factor
+        weight_decay (float, optional, default=0): weight decay (L2 penalty)
+        dampening (float, optional, default=0): dampening for momentum
+        nesterov (bool, optional, default=False): enables Nesterov momentum
 
     __ http://www.cs.toronto.edu/%7Ehinton/absps/momentum.pdf
-
-    .. note::
-        The implementation of SGD with Momentum/Nesterov subtly differs from
-        Sutskever et. al. and implementations in some other frameworks.
-
-        Considering the specific case of Momentum, the update can be written as
-
-        .. math::
-            \begin{aligned}
-                v_{t+1} & = \mu * v_{t} + g_{t+1}, \\
-                p_{t+1} & = p_{t} - \text{lr} * v_{t+1},
-            \end{aligned}
-
-        where :math:`p`, :math:`g`, :math:`v` and :math:`\mu` denote the 
-        parameters, gradient, velocity, and momentum respectively.
-
-        This is in contrast to Sutskever et. al. and
-        other frameworks which employ an update of the form
-
-        .. math::
-            \begin{aligned}
-                v_{t+1} & = \mu * v_{t} + \text{lr} * g_{t+1}, \\
-                p_{t+1} & = p_{t} - v_{t+1}.
-            \end{aligned}
-
-        The Nesterov version is analogously modified.
     """
 
-    def __init__(self, params, lr=required, momentum=0, dampening=0,
-                 weight_decay=0, nesterov=False):
-        if lr is not required and lr < 0.0:
+    def __init__(self, params, lr=required, momentum=MOMENTUM_MIN, dampening=DAMPENING_DEFAULT,
+                 weight_decay=WEIGHT_DECAY_MIN, nesterov=False):
+        if lr is not required and lr < LR_MIN:
             raise ValueError("Invalid learning rate: {}".format(lr))
-        if momentum < 0.0:
+        if momentum < MOMENTUM_MIN:
             raise ValueError("Invalid momentum value: {}".format(momentum))
-        if weight_decay < 0.0:
+        if weight_decay < WEIGHT_DECAY_MIN:
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
-
+        if nesterov and (momentum <= MOMENTUM_MIN or dampening != DAMPENING_DEFAULT):
+            raise ValueError("Nesterov momentum requires a momentum and zero dampening")
         defaults = dict(lr=lr, momentum=momentum, dampening=dampening,
                         weight_decay=weight_decay, nesterov=nesterov)
-        if nesterov and (momentum <= 0 or dampening != 0):
-            raise ValueError("Nesterov momentum requires a momentum and zero dampening")
         self.is_npu_fused_optimizer = True
         self._momentum_buffer_already_in_state = False
         super(NpuFusedSGD, self).__init__(params, defaults)
@@ -165,10 +140,10 @@ class NpuFusedSGD(Optimizer):
             return
 
         stash.combined_param_states_indexed_by_group = []
-        for group in self.param_groups:
+        for _ in self.param_groups:
             stash.combined_param_states_indexed_by_group.append([])
 
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             self._combine_group_param_states(i)
         stash.param_states_are_combined_by_group = True
 
@@ -206,12 +181,6 @@ class NpuFusedSGD(Optimizer):
 
     @torch.no_grad()
     def step(self, closure=None):
-        """Performs a single optimization step.
-
-        Arguments:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
         if not hasattr(self, "_amp_stash"):
             raise RuntimeError('apex.optimizers.NpuFusedSGD should be used with AMP.')
 
@@ -227,8 +196,7 @@ class NpuFusedSGD(Optimizer):
             with torch.enable_grad():
                 loss = closure()
 
-        stash = self._amp_stash
-        for i, group in enumerate(self.param_groups):
+        for i, _ in enumerate(self.param_groups):
             self._group_step(i)
 
         return loss
