@@ -18,7 +18,7 @@ diff -Nur '--exclude=.git' apex/.gitmodules apex-develop/.gitmodules
 -	branch = v1.2.0
 diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_initialize.py
 --- apex/apex/amp/_initialize.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/_initialize.py	2021-09-16 07:29:19.605887765 +0000
++++ apex-develop/apex/amp/_initialize.py	2021-11-06 03:43:48.950426136 +0000
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -92,6 +92,17 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_i
 +                        "you chose. Use model.to('npu') to use the default device.".format(
                          name, buf.type()))
  
+ 
+@@ -227,6 +243,10 @@
+     _amp_state.loss_scalers = []
+     for _ in range(num_losses):
+         _amp_state.loss_scalers.append(LossScaler(properties.loss_scale,
++                                                  init_scale=_amp_state.dynamic_init_scale,
++                                                  scale_growth_factor=_amp_state.scale_growth_factor,
++                                                  scale_backoff_factor=_amp_state.scale_backoff_factor,
++                                                  scale_window=_amp_state.scale_window,
+                                                   min_loss_scale=_amp_state.min_loss_scale,
+                                                   max_loss_scale=_amp_state.max_loss_scale))
  
 diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex/amp/_process_optimizer.py
 --- apex/apex/amp/_process_optimizer.py	2021-04-12 04:03:22.000000000 +0000
@@ -1284,7 +1295,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
                  else:
 diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/frontend.py
 --- apex/apex/amp/frontend.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/frontend.py	2021-09-16 07:29:19.605887765 +0000
++++ apex-develop/apex/amp/frontend.py	2021-11-06 03:43:48.950426136 +0000
 @@ -19,6 +19,8 @@
              "keep_batchnorm_fp32" : None,
              "master_weights" : None,
@@ -1314,9 +1325,14 @@ diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/front
          # properties.fused_optimizer = False
          # properties.enable_ddp_interop = False
          return properties # modified in place so this isn't really necessary
-@@ -206,7 +214,9 @@
+@@ -205,8 +213,14 @@
+     cast_model_outputs=None,
      num_losses=1,
      verbosity=1,
++    dynamic_init_scale=2.**16,
++    scale_growth_factor=2.,
++    scale_backoff_factor=0.5,
++    scale_window=2000,
      min_loss_scale=None,
 -    max_loss_scale=2.**24
 +    max_loss_scale=2.**24,
@@ -1325,7 +1341,21 @@ diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/front
      ):
      """
      Initialize your models, optimizers, and the Torch tensor and functional namespace according to the
-@@ -259,6 +269,9 @@
+@@ -254,11 +268,23 @@
+             support multiple losses/backward passes, but use a single global loss scale
+             for all of them.
+         verbosity (int, default=1):  Set to 0 to suppress Amp-related output.
++        dynamic_init_scale (float, optional, default=2.**16):  Initial dynamic loss scale factor.
++        scale_growth_factor (float, optional, default=2.0):  Factor by which the scale is multiplied
++            if no overflow occurs for ``scale_window`` consecutive iterations.
++            If dynamic loss scaling is not used, `scale_growth_factor` is ignored.
++        scale_backoff_factor (float, optional, default=0.5):  Factor by which the scale is multiplied
++            if overflow occurs in an iteration. If dynamic loss scaling is not used, `scale_backoff_factor` is ignored.
++        scale_window (int, optional, default=2000):  Number of consecutive iterations without overflow
++            that must occur for the scale to be multiplied by ``scale_growth_factor``.
++            If dynamic loss scaling is not used, `scale_window` is ignored.
+         min_loss_scale (float, default=None):  Sets a floor for the loss scale values that can be chosen by dynamic
+             loss scaling.  The default value of None means that no floor is imposed.
              If dynamic loss scaling is not used, `min_loss_scale` is ignored.
          max_loss_scale (float, default=2.**24):  Sets a ceiling for the loss scale values that can be chosen by
              dynamic loss scaling.  If dynamic loss scaling is not used, `max_loss_scale` is ignored.
@@ -1335,7 +1365,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/front
  
      Returns:
          Model(s) and optimizer(s) modified according to the ``opt_level``.
-@@ -306,6 +319,7 @@
+@@ -306,6 +332,7 @@
          https://github.com/NVIDIA/apex/issues
      """
      _amp_state.opt_properties = Properties()
@@ -1343,7 +1373,18 @@ diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/front
      _amp_state.verbosity = verbosity
  
      if not enabled:
-@@ -350,6 +364,10 @@
+@@ -330,6 +357,10 @@
+         for k, v in _amp_state.opt_properties.options.items():
+             maybe_print("{:22} : {}".format(k, v), True)
+ 
++    _amp_state.dynamic_init_scale = dynamic_init_scale
++    _amp_state.scale_growth_factor = scale_growth_factor
++    _amp_state.scale_backoff_factor = scale_backoff_factor
++    _amp_state.scale_window = scale_window
+     _amp_state.min_loss_scale = min_loss_scale
+     _amp_state.max_loss_scale = max_loss_scale
+ 
+@@ -350,6 +381,10 @@
          _amp_state.opt_properties.master_weights = master_weights
      if loss_scale is not None:
          _amp_state.opt_properties.loss_scale = loss_scale
@@ -1404,7 +1445,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/handle.py apex-develop/apex/amp/handle.
                                      opt.scale_set_by_backward = False
 diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.py
 --- apex/apex/amp/scaler.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/scaler.py	2021-09-16 07:29:19.605887765 +0000
++++ apex-develop/apex/amp/scaler.py	2021-11-06 03:43:48.950426136 +0000
 @@ -1,7 +1,25 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -1441,7 +1482,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
      # Exception handling for 18.04 compatibility
      if check_overflow:
          cpu_sum = float(model_grad.float().sum())
-@@ -27,13 +46,17 @@
+@@ -27,53 +46,108 @@
      #     master_grad.copy_(model_grad)
      assert stashed_grad.dtype == master_grad.dtype
      converted_model_grad = model_grad.data.to(master_grad.dtype)
@@ -1460,7 +1501,13 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
  
      def __init__(self,
                   loss_scale,
-@@ -45,50 +68,89 @@
+                  init_scale=2.**16,
+-                 scale_factor=2.,
++                 scale_growth_factor=2.,
++                 scale_backoff_factor=0.5,
+                  scale_window=2000,
+                  min_loss_scale=None,
+                  max_loss_scale=2.**24):
          if loss_scale == "dynamic":
              self.dynamic = True
              self._loss_scale = min(max_loss_scale, init_scale)
@@ -1479,10 +1526,13 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
 +            LossScaler.npu_float_status = None
          self._max_loss_scale = max_loss_scale
          self._min_loss_scale = min_loss_scale
++        self._scale_growth_factor = scale_growth_factor
++        self._scale_backoff_factor = scale_backoff_factor
          self._scale_seq_len = scale_window
          self._unskipped = 0
          self._has_overflow = False
 -        self._overflow_buf = torch.cuda.IntTensor([0])
++        self._overflow_checked = False
 +        self._overflow_buf = torch.npu.IntTensor([0])
 +        self._dist_overflow_count = torch.Tensor([0.]).to('npu')
 +        self._dist_initialized = False
@@ -1524,56 +1574,46 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
      def loss_scale(self):
          return self._loss_scale
  
++    def _check_overflow_and_sync(self):
++        if self.dynamic:
++            if not self._overflow_checked:
++                self._has_overflow = LossScaler.get_npu_overflow_flag()
++                self._overflow_checked = True
++
++            if self._dist_initialized:
++                if self._has_overflow:
++                    self._dist_overflow_count.add_(1)
++                    dist.all_reduce(self._dist_overflow_count)
++                    self._dist_overflow_count.zero_()
++                else:
++                    dist.all_reduce(self._dist_overflow_count)
++                    if self._dist_overflow_count.item() != 0:
++                        self._has_overflow = True
++                    self._dist_overflow_count.zero_()
++        else:
++            self._has_overflow = False
++
      def unscale_python(self, model_grads, master_grads, scale):
--        for model, master in zip(model_grads, master_grads):
--            if model is not None:
--                if not LossScaler.warned_unscaling_non_fp32_grad:
--                    if master.dtype != torch.float32:
--                        maybe_print(
--                            "Attempting to unscale a grad with type {} ".format(master.type()) +
--                            "Unscaling non-fp32 grads may indicate an error. "
--                            "When using Amp, you don't need to call .half() on your model.")
--                        LossScaler.warned_unscaling_non_fp32_grad = True
--                self._has_overflow = scale_check_overflow_python(model,
--                                                                 master,
++        self._check_overflow_and_sync()
++        if self._has_overflow:
++            return
++
+         for model, master in zip(model_grads, master_grads):
+             if model is not None:
+                 if not LossScaler.warned_unscaling_non_fp32_grad:
+@@ -85,10 +159,7 @@
+                         LossScaler.warned_unscaling_non_fp32_grad = True
+                 self._has_overflow = scale_check_overflow_python(model,
+                                                                  master,
 -                                                                 1./scale,
 -                                                                 self.dynamic)
 -                if self._has_overflow and self.dynamic:
 -                    break
-+        if self.dynamic:
-+            self._has_overflow = LossScaler.get_npu_overflow_flag()
-+        else:
-+            self._has_overflow = False
-+
-+        if not self._has_overflow:
-+            for model, master in zip(model_grads, master_grads):
-+                if model is not None:
-+                    if not LossScaler.warned_unscaling_non_fp32_grad:
-+                        if master.dtype != torch.float32:
-+                            maybe_print(
-+                                "Attempting to unscale a grad with type {} ".format(master.type()) +
-+                                "Unscaling non-fp32 grads may indicate an error. "
-+                                "When using Amp, you don't need to call .half() on your model.")
-+                            LossScaler.warned_unscaling_non_fp32_grad = True
-+                    self._has_overflow = scale_check_overflow_python(model,
-+                                                                     master,
-+                                                                     1./scale)
-+
-+        if self._has_overflow:
-+            if self.dynamic and self._dist_initialized:
-+                self._dist_overflow_count.add_(1)
-+                dist.all_reduce(self._dist_overflow_count)
-+                self._dist_overflow_count.zero_()
-+        else:
-+            if self.dynamic and self._dist_initialized:
-+                dist.all_reduce(self._dist_overflow_count)
-+                if self._dist_overflow_count.item() != 0:
-+                    self._has_overflow = True
-+                self._dist_overflow_count.zero_()
++                                                                 1./scale)
  
      # unused_scale keeps some of the old API alive for hopefully a short time.
      def unscale(self, model_grads, master_grads, unused_scale, models_are_masters=False, scale_override=None):
-@@ -117,7 +179,7 @@
+@@ -117,7 +188,7 @@
                                   1./scale)
          else:
              self.unscale_python(model_grads, master_grads, scale)
@@ -1582,67 +1622,28 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
          # Defer to update_scale
          # If the fused kernel is available, we only need one D2H memcopy and sync.
          # if LossScaler.has_fused_kernel and self.dynamic and not self._has_overflow:
-@@ -128,32 +190,50 @@
+@@ -128,7 +199,12 @@
                                      stashed_master_grads,
                                      master_grads,
                                      a,
 -                                    b):
--        for model, stashed, master in zip(model_grads, stashed_master_grads, master_grads):
--            if model is None and stashed is None:
--                continue
--            else:
--                if not LossScaler.warned_unscaling_non_fp32_grad:
--                    if master.dtype != torch.float32:
--                        maybe_print(
--                            "Attempting to unscale a grad with type {} ".format(master.type()) +
--                            "Unscaling non-fp32 grads may indicate an error. "
--                            "When using Amp, you don't need to call .half() on your model.")
--                        LossScaler.warned_unscaling_non_fp32_grad = True
--                self._has_overflow = axpby_check_overflow_python(model,
--                                                                 stashed,
--                                                                 master,
--                                                                 a,
--                                                                 b,
++                                    b,
++                                    use_npu_fused_optimizer):
++        self._check_overflow_and_sync()
++        if self._has_overflow:
++            return
++
+         for model, stashed, master in zip(model_grads, stashed_master_grads, master_grads):
+             if model is None and stashed is None:
+                 continue
+@@ -145,15 +221,14 @@
+                                                                  master,
+                                                                  a,
+                                                                  b,
 -                                                                 self.dynamic)
 -                if self._has_overflow and self.dynamic:
 -                    break
-+                                    b,
-+                                    use_npu_fused_optimizer):
-+        if self.dynamic:
-+            self._has_overflow = LossScaler.get_npu_overflow_flag()
-+        else:
-+            self._has_overflow = False
-+
-+        if not self._has_overflow:
-+            for model, stashed, master in zip(model_grads, stashed_master_grads, master_grads):
-+                if model is None and stashed is None:
-+                    continue
-+                else:
-+                    if not LossScaler.warned_unscaling_non_fp32_grad:
-+                        if master.dtype != torch.float32:
-+                            maybe_print(
-+                                "Attempting to unscale a grad with type {} ".format(master.type()) +
-+                                "Unscaling non-fp32 grads may indicate an error. "
-+                                "When using Amp, you don't need to call .half() on your model.")
-+                            LossScaler.warned_unscaling_non_fp32_grad = True
-+                    self._has_overflow = axpby_check_overflow_python(model,
-+                                                                     stashed,
-+                                                                     master,
-+                                                                     a,
-+                                                                     b,
-+                                                                     use_npu_fused_optimizer)
-+
-+        if self._has_overflow:
-+            if self.dynamic and self._dist_initialized:
-+                self._dist_overflow_count.add_(1)
-+                dist.all_reduce(self._dist_overflow_count)
-+                self._dist_overflow_count.zero_()
-+        else:
-+            if self.dynamic and self._dist_initialized:
-+                dist.all_reduce(self._dist_overflow_count)
-+                if self._dist_overflow_count.item() != 0:
-+                    self._has_overflow = True
-+                self._dist_overflow_count.zero_()
++                                                                 use_npu_fused_optimizer)
  
      def unscale_with_stashed(self,
                               model_grads,
@@ -1654,7 +1655,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
          if self._has_overflow:
              return
  
-@@ -181,13 +261,89 @@
+@@ -181,15 +256,67 @@
                                               stashed_master_grads,
                                               master_grads,
                                               out_scale/grads_have_scale,
@@ -1671,20 +1672,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
 +                                      grads_combined,
 +                                      stashed_grads_combined,
 +                                      scale_override=None):
-+
-+        if self.dynamic:
-+            self._has_overflow = LossScaler.get_npu_overflow_flag()
-+            if self._dist_initialized:
-+                if self._has_overflow:
-+                    self._dist_overflow_count.add_(1)
-+                    dist.all_reduce(self._dist_overflow_count)
-+                    self._dist_overflow_count.zero_()
-+                else:
-+                    dist.all_reduce(self._dist_overflow_count)
-+                    if self._dist_overflow_count.item() != 0:
-+                        self._has_overflow = True
-+                    self._dist_overflow_count.zero_()
-+
++        self._check_overflow_and_sync()
 +        if self._has_overflow:
 +            return
 +        
@@ -1705,19 +1693,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
 +        if master_grads_combined is None:
 +            return
 +
-+        if self.dynamic:
-+            self._has_overflow = LossScaler.get_npu_overflow_flag()
-+            if self._dist_initialized:
-+                if self._has_overflow:
-+                    self._dist_overflow_count.add_(1)
-+                    dist.all_reduce(self._dist_overflow_count)
-+                    self._dist_overflow_count.zero_()
-+                else:
-+                    dist.all_reduce(self._dist_overflow_count)
-+                    if self._dist_overflow_count.item() != 0:
-+                        self._has_overflow = True
-+                    self._dist_overflow_count.zero_()
-+
++        self._check_overflow_and_sync()
 +        if self._has_overflow:
 +            return
 +
@@ -1744,7 +1720,30 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
 +
      def clear_overflow_state(self):
          self._has_overflow = False
++        self._overflow_checked = False
          if self.has_fused_kernel:
+             self._overflow_buf.zero_()
+ 
+@@ -202,16 +329,16 @@
+         if self._has_overflow and self.dynamic:
+             should_skip = True
+             if(self._min_loss_scale):
+-                self._loss_scale = max(self._min_loss_scale, self._loss_scale/2.)
++                self._loss_scale = max(self._min_loss_scale, self._loss_scale * self._scale_backoff_factor)
+             else:
+-                self._loss_scale = self._loss_scale/2.
++                self._loss_scale = self._loss_scale * self._scale_backoff_factor
+             self._unskipped = 0
+         else:
+             should_skip = False
+             self._unskipped += 1
+ 
+         if self._unskipped == self._scale_seq_len and self.dynamic:
+-            self._loss_scale = min(self._max_loss_scale, self._loss_scale*2.)
++            self._loss_scale = min(self._max_loss_scale, self._loss_scale * self._scale_growth_factor)
+             self._unskipped = 0
+ 
+         return should_skip
 diff -Nur '--exclude=.git' apex/apex/amp/utils.py apex-develop/apex/amp/utils.py
 --- apex/apex/amp/utils.py	2021-04-12 04:03:22.000000000 +0000
 +++ apex-develop/apex/amp/utils.py	2021-09-16 07:29:19.605887765 +0000
@@ -1809,8 +1808,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/wrap.py apex-develop/apex/amp/wrap.py
                                                      dtype=torch.half)
 diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-develop/apex/optimizers/__init__.py
 --- apex/apex/optimizers/__init__.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/optimizers/__init__.py	2021-10-25 04:00:50.859084569 +0000
-@@ -2,4 +2,12 @@
++++ apex-develop/apex/optimizers/__init__.py	2021-11-06 03:43:48.950426136 +0000
+@@ -2,4 +2,14 @@
  from .fused_adam import FusedAdam
  from .fused_novograd import FusedNovoGrad
  from .fused_lamb import FusedLAMB
@@ -1825,6 +1824,8 @@ diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-develop/apex/op
 +from .lamb import Lamb
 +from .npu_fused_adamw import NpuFusedAdamW
 +from .npu_fused_adamp import NpuFusedAdamP
++from .npu_fused_rmsprop import NpuFusedRMSprop
++from .npu_fused_rmsprop_tf import NpuFusedRMSpropTF
 diff -Nur '--exclude=.git' apex/apex/parallel/LARC.py apex-develop/apex/parallel/LARC.py
 --- apex/apex/parallel/LARC.py	2021-04-12 04:03:22.000000000 +0000
 +++ apex-develop/apex/parallel/LARC.py	2021-09-16 07:29:19.617887862 +0000
