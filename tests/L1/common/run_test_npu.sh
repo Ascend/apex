@@ -44,6 +44,7 @@ npu_fused_sgds=(
 )
 
 loss_scales=(
+"--loss-scale dynamic"
 "--loss-scale 1024.0"
 )
 

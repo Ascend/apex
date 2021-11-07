@@ -43,7 +43,7 @@ class NpuFusedSGD(Optimizer):
         ...
         opt.step()
 
-    :class:`apex.optimizers.FusedSGD` should be used with Amp.  Currently, if you wish to use :class:`NpuFusedSGD`
+    :class:`apex.optimizers.NpuFusedSGD` should be used with Amp.  Currently, if you wish to use :class:`NpuFusedSGD`
     with Amp, only ``opt_level O1 and O2`` can be choosed::
 
         opt = apex.optimizers.NpuFusedSGD(model.parameters(), lr = ....)
