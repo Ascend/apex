@@ -109,7 +109,7 @@ def test(args, model, device, test_loader, event_writer:SummaryWriter, epoch):
         test_loss, correct, len(test_loader.dataset),
         100. * acc))
     if acc < EPS:
-       raise Exception("Accuracy dose not meet expect!")
+        raise Exception("Accuracy dose not meet expect!")
 
 def main():
     # Training settings
