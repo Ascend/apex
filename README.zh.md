@@ -54,7 +54,8 @@ pip3 install --upgrade apex-0.1+ascend-cp37-cp37m-linux_{arch}.whl arch表示架
 - [x] 动态 loss scale
 - [x] combine tensors
 - [x] combine grad for unscale
-- [x] npu fused optimizer: adadelta, adam, sgd, lamb
+- [x] npu fused optimizer: adadelta, adam, adamp, adamw, sgd, lamb, rmsprop, rmsprop_tf
+- [x] 动态 loss scale新增dynamic_init_scale, scale_growth_factor, scale_backoff_factor, scale_window等可调参数
 
 **说明：**
 
