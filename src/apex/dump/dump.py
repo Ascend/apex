@@ -33,7 +33,7 @@ class HDF5FileOperation():
         with h5py.File(self.file_path, "r") as f:
             def print_name(name):
                 print(name)
-                dset=f[name]
+                dset = f[name]
                 if isinstance(dset, h5py.Dataset):
                     print(dset.dtype)
                     print(dset.shape)
@@ -85,11 +85,11 @@ class HookerAndDumper():
         return group_name
 
     # dump前向数据 
-    def forward_hook_fn(self, module, input, output):
+    def forward_hook_fn(self, module, feat_input, feat_output):
         print("######## forward_hook_fn ########")
         group_name = self._create_group(module)
-        self.hfo.write_data(group_name, "feat_input", input)
-        self.hfo.write_data(group_name, "feat_output", output)
+        self.hfo.write_data(group_name, "feat_input", feat_input)
+        self.hfo.write_data(group_name, "feat_output", feat_output)
 
     # dump 后向数据
     def backward_hook_fn(self, module, grad_input, grad_output):
@@ -101,7 +101,7 @@ class HookerAndDumper():
     # epoch 和 step用来标志文件名称
     def register_hooks(self, model, epoch, step):
         # write HDF5文件
-        self.file_path = self.file_path + str(epoch) + "-epoch" + "_" + str(step) + "-step" +"_dump.hdf5"
+        self.file_path = self.file_path + str(epoch) + "-epoch" + "_" + str(step) + "-step" + "_dump.hdf5"
         self.hfo = HDF5FileOperation(self.file_path) 
         # 遍历所有 module，注册 forward hook 和 backward hook
         print("model:", type(model))

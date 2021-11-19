@@ -58,14 +58,14 @@ for n, (i_e, i_p) in enumerate(zip(dict_datas[0]["Iteration"], dict_datas[1]["It
     print("step = {}:".format(i_e))
     assert i_e == i_p, "i_e = {}, i_p = {}".format(i_e, i_p)
 
-    loss_base = dict_datas[3]["Loss"][n]
+    loss_base_n = dict_datas[3]["Loss"][n]
     for file_name, dict_data, file_desc in zip(file_names, dict_datas, file_descs):
         if file_name == file_names[3]:
             break
         else:
-            loss = dict_data["Loss"][n]
-            result = file_desc + " loss :{:.3f}".format(loss) + " loss base:{:.3f}".format(loss_base)
-            res, ratio = compare_loss(loss, loss_base)
+            loss_n = dict_data["Loss"][n]
+            result = file_desc + " loss :{:.3f}".format(loss_n) + " loss base:{:.3f}".format(loss_base_n)
+            res, ratio = compare_loss(loss_n, loss_base_n)
             if res == False:
                 err_count = err_count + 1
                 result = result + " ratio:{:.3f}, loss compare Failed".format(ratio)

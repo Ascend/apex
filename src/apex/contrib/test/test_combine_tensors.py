@@ -20,8 +20,6 @@ import sys
 from apex import amp
 import torch
 from apex.contrib.combine_tensors import combine_npu
-sys.path.append('../../../tests/L0')
-import device
 
 x_before_combine_des = 'x before combine: '
 y_before_combine_des = 'y before combine: '
@@ -37,7 +35,7 @@ def print_tensor_phy_info(des, tensor):
 class TestCombineTensors(unittest.TestCase):
 
     def setUp(self):
-        self.device = device.CALCULATE_DEVICE
+        self.device = 'npu'
 
     def basic_functionality(self, dtype = torch.float32):
         x = torch.zeros((2,2,2,2), device = self.device, dtype = dtype)

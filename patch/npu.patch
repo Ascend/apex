@@ -106,8 +106,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_i
  
 diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex/amp/_process_optimizer.py
 --- apex/apex/amp/_process_optimizer.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/_process_optimizer.py	2021-09-16 07:29:19.605887765 +0000
-@@ -1,9 +1,52 @@
++++ apex-develop/apex/amp/_process_optimizer.py	2021-11-18 09:59:35.556782293 +0000
+@@ -1,9 +1,53 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
 +# All rights reserved.
@@ -129,6 +129,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  from ..multi_tensor_apply import multi_tensor_applier
  from ._amp_state import maybe_print
  import torch
++from torch._six import inf
  from ..optimizers import FusedSGD
 +from ..contrib.combine_tensors import combine_npu, get_part_combined_tensor, is_combined_tensor_valid
 +
@@ -160,10 +161,11 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  
  
  class AmpOptimizerState(object):
-@@ -26,96 +69,114 @@
+@@ -25,97 +69,129 @@
+             master_params_to_model_params(fp16_group, fp32_from_fp16_group)
  
  
- def lazy_init_with_master_weights(self):
+-def lazy_init_with_master_weights(self):
 -        stash = self._amp_stash
 -        stash.fp16_groups = []
 -        stash.fp32_from_fp16_groups = []
@@ -196,10 +198,24 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 -                        raise TypeError("Optimizer's parameters must be either "
 -                                        "torch.cuda.FloatTensor or torch.cuda.HalfTensor. "
 -                                        "Received {}".format(param.type()))
--
++def calc_clip_grad_norm_fused(combined_grads, combined_grad_masks, norm_type):
++    total_norm = torch.tensor(0.0).npu()
++    norm_type = float(norm_type)
++    if norm_type == inf:
++        for combined_grad, combined_grad_mask in zip(combined_grads, combined_grad_masks):
++            if combined_grad is not None:
++                total_norm += combined_grad.float().abs().mul_(combined_grad_mask).max()
++    else:
++        for combined_grad, combined_grad_mask in zip(combined_grads, combined_grad_masks):
++            if combined_grad is not None:
++                total_norm += combined_grad.float().pow(norm_type).mul_(combined_grad_mask).sum()
++        total_norm.sqrt_()
++    return total_norm
+ 
 -            stash.fp16_groups.append(fp16_params_this_group)
 -            stash.fp32_from_fp16_groups.append(fp32_from_fp16_params_this_group)
 -            stash.fp32_from_fp32_groups.append(fp32_params_this_group)
++def lazy_init_with_master_weights(self):
 +    stash = self._amp_stash
 +    stash.fp16_groups = []
 +    stash.fp32_from_fp16_groups = []
@@ -347,7 +363,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
                  continue
  
          # unscale() implements grads*(1/scale), so "scale" should be grads_have_scale/out_scale.
-@@ -123,130 +184,257 @@
+@@ -123,130 +199,257 @@
              scaler.unscale(
                  grads_needing_unscale,
                  grads_needing_unscale,
@@ -400,7 +416,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +            # Set up to leverage grad copy elision.
 +            # This may behave differently from an unpatched optimizer if zero_grad is used and the param is unused.
 +            param.grad = None
-+
+ 
+-    # for i, param in enumerate(stash.all_fp32_from_fp16_params):
+-    #     stash.all_fp32_from_fp16_grad_stash[i] = param.grad
 +        # for i, param in enumerate(stash.all_fp32_from_fp16_params):
 +        #     stash.all_fp32_from_fp16_grad_stash[i] = param.grad
 +
@@ -408,9 +426,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +            stash.all_fp32_from_fp32_grad_stash[i] = param.grad
 +            # Set up to leverage grad copy elision:
 +            param.grad = None
- 
--    # for i, param in enumerate(stash.all_fp32_from_fp16_params):
--    #     stash.all_fp32_from_fp16_grad_stash[i] = param.grad
++
 +
 +@torch.no_grad()
 +def combined_init_with_master_weights(self):
@@ -672,7 +688,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  
  
  #####################################################################################
-@@ -318,6 +506,420 @@
+@@ -318,6 +521,427 @@
          stash.lazy_init_called = True
  
  
@@ -1090,10 +1106,17 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    return combined_grad_masks
 +
 +
++def get_optimizer_clip_grad_norm_fused(self, norm_type=2):
++    combined_grads = self.get_optimizer_combined_grads()
++    combined_grad_masks = self.get_optimizer_combined_grad_masks()
++    total_norm = calc_clip_grad_norm_fused(combined_grads, combined_grad_masks, norm_type)
++    return total_norm
++
++
  def _process_optimizer(optimizer, properties):
      if hasattr(optimizer, "_amp_stash"):
          raise RuntimeError("A given optimizer should only be passed through amp.initialize once.")
-@@ -327,15 +929,64 @@
+@@ -327,15 +951,64 @@
      optimizer._amp_stash.lazy_init_called = False
      optimizer._amp_stash.already_patched = False
      optimizer._amp_stash.params_have_scaled_gradients = False
@@ -1159,7 +1182,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
      # TODO:  Centralize exposure and import error checking for the C backend.
      if multi_tensor_applier.available:
          import amp_C
-@@ -352,34 +1003,31 @@
+@@ -352,34 +1025,31 @@
  
          old_step = optimizer.step
          def new_step(self, closure=None):
@@ -1209,7 +1232,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  
          if isinstance(optimizer, FusedSGD):
              optimizer._prepare_amp_backward = types.MethodType(
-@@ -391,10 +1039,35 @@
+@@ -391,10 +1061,35 @@
                  prepare_backward_with_master_weights, optimizer)
              optimizer._post_amp_backward = types.MethodType(
                  post_backward_with_master_weights, optimizer)
@@ -1245,7 +1268,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
          if isinstance(optimizer, FusedSGD):
              optimizer._prepare_amp_backward = types.MethodType(
                  prepare_backward_no_master_weights_FusedSGD, optimizer)
-@@ -406,7 +1079,18 @@
+@@ -406,7 +1101,19 @@
              optimizer._post_amp_backward = types.MethodType(
                  post_backward_no_master_weights, optimizer)
  
@@ -1261,10 +1284,11 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    optimizer.get_optimizer_combined_params = types.MethodType(get_optimizer_combined_params, optimizer)
 +    optimizer.get_optimizer_combined_grads = types.MethodType(get_optimizer_combined_grads, optimizer)
 +    optimizer.get_optimizer_combined_grad_masks = types.MethodType(get_optimizer_combined_grad_masks, optimizer)
++    optimizer.get_optimizer_clip_grad_norm_fused = types.MethodType(get_optimizer_clip_grad_norm_fused, optimizer)
  
      old_add_param_group = optimizer.add_param_group
  
-@@ -435,13 +1119,13 @@
+@@ -435,13 +1142,13 @@
              fp32_from_fp16_params_this_group = []
              for i, param in enumerate(new_group['params']):
                  if param.requires_grad:
@@ -1280,7 +1304,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
                          fp32_params_this_group.append(param)
                          new_group['params'][i] = param
                      else:
-@@ -471,10 +1155,10 @@
+@@ -471,10 +1178,10 @@
              #     param.grad = None
          else:
              for param in new_group['params']:
