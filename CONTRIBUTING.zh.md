@@ -18,7 +18,7 @@
 
 -   在[Gitee](https://gitee.com/ascend/apex)上Fork存储库。
 -   阅读[README.md](#https://gitee.com/ascend/apex/blob/master/README.zh.md)以获取项目信息和构建说明。
--   行为准则(coc) https://gitee.com/ascend/community/blob/master/code-of-conduct_zh_cn.md。
+-   行为准则 [coc](https://gitee.com/ascend/community/blob/master/code-of-conduct_zh_cn.md)
 
 <h2 id="开发指导.md">开发指导</h2>
 
