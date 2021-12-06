@@ -16,9 +16,9 @@
 
 <h2 id="入门.md">入门</h2>
 
--   在[Gitee](https://gitee.com/ascend/pytorch)上Fork存储库。
--   阅读[README.md](#https://gitee.com/ascend/pytorch/blob/master/README.zh.md)以获取项目信息和构建说明。
--   行为准则（coc) https://gitee.com/ascend/community/blob/master/code-of-conduct_zh_cn.md。
+-   在[Gitee](https://gitee.com/ascend/apex)上Fork存储库。
+-   阅读[README.md](#https://gitee.com/ascend/apex/blob/master/README.zh.md)以获取项目信息和构建说明。
+-   行为准则(coc) https://gitee.com/ascend/community/blob/master/code-of-conduct_zh_cn.md。
 
 <h2 id="开发指导.md">开发指导</h2>
 
@@ -45,7 +45,7 @@
 
 -   单元测试指南
 
-    请在PyTorch社区使用统一的单元测试风格，  _Python_中建议的单元测试风格是[pytest](http://www.pytest.org/en/latest/)，_C++_单元测试所建议的风格是  [Googletest Primer](#https://github.com/google/googletest/blob/master/docs/primer.md)  。测试用例的设计意图应该通过它的注释名称来反映。
+    请在Apex社区使用统一的单元测试风格，  _Python_中建议的单元测试风格是[pytest](http://www.pytest.org/en/latest/)，_C++_单元测试所建议的风格是  [Googletest Primer](#https://github.com/google/googletest/blob/master/docs/primer.md)  。测试用例的设计意图应该通过它的注释名称来反映。
 
 -   重构指南
 
@@ -93,7 +93,7 @@
     git checkout -b {new_branch_name} origin/master
     ```
 
-    以master分支为例，PyTorch可能会根据需要创建版本分支和下游开发分支，请先修复上游的bug。然后就可以随意更改代码了。
+    以master分支为例，Apex可能会根据需要创建版本分支和下游开发分支，请先修复上游的bug。然后就可以随意更改代码了。
 
 4.  将代码推送到远程仓库。
 
@@ -134,7 +134,7 @@
 
 <h2 id="提出PR.md">提出PR</h2>
 
--   在[Gitee](https://gitee.com/ascend/pytorch/issues)上提出您的想法作为_问题_。
+-   在[Gitee](https://gitee.com/ascend/apex/issues)上提出您的想法作为_问题_。
 -   如果是需要大量设计细节的新功能，还应提交设计方案。
 -   在问题讨论和设计提案审查中达成共识后，完成分叉回购的开发并提交 PR（Pull Request）。
 -   在从批准者那里收到2+ LGTM（Looks Good To Me）之前，不允许任何PR 。请注意，审批人不允许在自己的 PR 上添加LGTM。
