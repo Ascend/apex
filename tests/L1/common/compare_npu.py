@@ -14,8 +14,8 @@
 # limitations under the License.
 
 import argparse
-import torch
 import itertools
+import torch
 
 EPS = 0.05
 err_count = 0

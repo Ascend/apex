@@ -21,16 +21,16 @@ Based on https://github.com/pytorch/examples/blob/master/mnist/main.py
 
 from __future__ import print_function
 import argparse
+import collections
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
-import apex
-import collections
 from tensorboardX import SummaryWriter
 from torchvision import datasets, transforms
-from apex import amp
 from torch.optim import Optimizer
+import apex
+from apex import amp
 
 CALCULATE_DEVICE = "npu:0"
 SOURCE_DIR = "/home/data/"
