@@ -17,8 +17,8 @@ import argparse
 import functools as ft
 import itertools as it
 import sys
-from apex import amp
 import torch
+from apex import amp
 from apex.contrib.combine_tensors import combine_npu
 
 x_before_combine_des = 'x before combine: '
