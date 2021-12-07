@@ -82,7 +82,7 @@
     ```
     # For Gitee
     git clone https://gitee.com/{insert_your_forked_repo}/apex.git
-    git remote add upstream https://gitee.com/apex/apex.git
+    git remote add upstream https://gitee.com/ascend/apex.git
     ```
 
 3.  本地开发代码。
