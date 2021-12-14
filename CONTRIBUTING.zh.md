@@ -10,7 +10,7 @@
     -   [提出PR](#提出PR.md)
 <h2 id="贡献者许可协议.md">贡献者许可协议</h2>
 
-在您第一次向 Apex社区提交代码之前，需要签署 CLA。
+在您第一次向 ascend社区提交代码之前，需要签署 CLA。
 
 对于个人贡献者，详细信息请参考[ICLA 在线文档](https://www.mindspore.cn/icla)。
 
@@ -41,11 +41,11 @@
 
 -   编码指南
 
-    请在Apex社区使用规统一的编码分格，_Python__中_建议的编码风格是[PEP 8编码样式](https://pep8.org/)，_C++_编码所建议的风格是  [Google C++编码指南](http://google.github.io/styleguide/cppguide.html)  。可以使用[CppLint](https://github.com/cpplint/cpplint)，[CppCheck](http://cppcheck.sourceforge.net/)，[CMakeLint](https://github.com/cmake-lint/cmake-lint)，[CodeSpell](https://github.com/codespell-project/codespell)，  [Lizard](http://www.lizard.ws/)，[ShellCheck](https://github.com/koalaman/shellcheck)和[pylint](https://pylint.org/)检查代码的格式，建议在您的IDE中安装这些插件。
+    请在ascend社区使用规统一的编码分格，_Python__中_建议的编码风格是[PEP 8编码样式](https://pep8.org/)，_C++_编码所建议的风格是  [Google C++编码指南](http://google.github.io/styleguide/cppguide.html)  。可以使用[CppLint](https://github.com/cpplint/cpplint)，[CppCheck](http://cppcheck.sourceforge.net/)，[CMakeLint](https://github.com/cmake-lint/cmake-lint)，[CodeSpell](https://github.com/codespell-project/codespell)，  [Lizard](http://www.lizard.ws/)，[ShellCheck](https://github.com/koalaman/shellcheck)和[pylint](https://pylint.org/)检查代码的格式，建议在您的IDE中安装这些插件。
 
 -   单元测试指南
 
-    请在Apex社区使用统一的单元测试风格，  _Python_中建议的单元测试风格是[pytest](http://www.pytest.org/en/latest/)，_C++_单元测试所建议的风格是  [Googletest Primer](#https://github.com/google/googletest/blob/master/docs/primer.md)  。测试用例的设计意图应该通过它的注释名称来反映。
+    请在ascend社区使用统一的单元测试风格，  _Python_中建议的单元测试风格是[pytest](http://www.pytest.org/en/latest/)，_C++_单元测试所建议的风格是  [Googletest Primer](#https://github.com/google/googletest/blob/master/docs/primer.md)  。测试用例的设计意图应该通过它的注释名称来反映。
 
 -   重构指南
 
@@ -95,17 +95,18 @@
 
     以master分支为例，Apex可能会根据需要创建版本分支和下游开发分支，请先修复上游的bug。然后就可以随意更改代码了。
 
-4.  将代码推送到远程仓库。
+4. 将代码推送到远程仓库。
 
-    更新代码后，您需要以正式的方式推送更新：
+   更新代码后，您需要以正式的方式推送更新：
 
-    ```
-    git add .
-    git status # Check the update status
-    git commit -m "Your commit title"
-    git commit -s --amend #Add the concrete description of your commit
-    git push origin {new_branch_name}
-    ```
+   ```
+   git add .
+   git status # 检查git状态
+   git commit -m "你的提交描述"
+   git commit -s --amend 
+   # 提交代码到你的分支
+   git push origin {new_branch_name}
+   ```
 
 5.  向 Apex存储库拉取请求。
 
@@ -136,7 +137,7 @@
 
 -   在[Gitee](https://gitee.com/ascend/apex/issues)上提出您的想法作为_问题_。
 -   如果是需要大量设计细节的新功能，还应提交设计方案。
--   在问题讨论和设计提案审查中达成共识后，完成分叉回购的开发并提交 PR（Pull Request）。
+-   在问题讨论和设计提案审查中达成共识后，完成个人分支的开发并提交 PR（Pull Request）。
 -   在从批准者那里收到2+ LGTM（Looks Good To Me）之前，不允许任何PR 。请注意，审批人不允许在自己的 PR 上添加LGTM。
 -   在 PR 被充分讨论后，它将根据讨论的结果被合并、放弃或拒绝。
 
