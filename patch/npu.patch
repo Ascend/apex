@@ -1850,28 +1850,6 @@ diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-develop/apex/op
 +from .npu_fused_adamp import NpuFusedAdamP
 +from .npu_fused_rmsprop import NpuFusedRMSprop
 +from .npu_fused_rmsprop_tf import NpuFusedRMSpropTF
-diff -Nur '--exclude=.git' apex/apex/parallel/LARC.py apex-develop/apex/parallel/LARC.py
---- apex/apex/parallel/LARC.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/parallel/LARC.py	2021-09-16 07:29:19.617887862 +0000
-@@ -86,8 +86,16 @@
-                 for p in group['params']:
-                     if p.grad is None:
-                         continue
--                    param_norm = torch.norm(p.data)
--                    grad_norm = torch.norm(p.grad.data)
-+                    # todo:restore this modification after torch.norm support any npu format
-+                    format_id = p.storage().npu_format()
-+                    if format_id != 0:
-+                        p_cl = p.npu_format_cast(0)
-+                        p_cl_grad = p.grad.npu_format_cast(0)
-+                        param_norm = torch.norm(p_cl.data)
-+                        grad_norm = torch.norm(p_cl_grad.data)
-+                    else:
-+                        param_norm = torch.norm(p.data)
-+                        grad_norm = torch.norm(p.grad.data)
- 
-                     if param_norm != 0 and grad_norm != 0:
-                         # calculate adaptive lr + weight decay
 diff -Nur '--exclude=.git' apex/setup.py apex-develop/setup.py
 --- apex/setup.py	2021-04-12 04:03:22.000000000 +0000
 +++ apex-develop/setup.py	2021-08-04 09:35:25.072666996 +0000
