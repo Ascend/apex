@@ -43,11 +43,17 @@ def get_part_combined_tensor(combined_tensor, index, size):
     if combined_tensor is None or size == 0:
         return None
     
+    if (index + size) > combined_tensor.storage().size():
+        raise RuntimeError("(index + size) ({}) > combined_tensor.storage().size() ({})".format(
+                           index + size, combined_tensor.storage().size()))
+
     part_tensor = torch.zeros(size, dtype=combined_tensor.dtype).npu()
     change_data_ptr(part_tensor, combined_tensor, index)
     return part_tensor
 
 def is_combined_tensor_valid(combined_tensor, list_of_tensor):
+    if len(list_of_tensor) == 0:
+        return True
     if combined_tensor is None:
         return False
 

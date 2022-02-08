@@ -106,7 +106,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_i
  
 diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex/amp/_process_optimizer.py
 --- apex/apex/amp/_process_optimizer.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/_process_optimizer.py	2021-11-18 09:59:35.556782293 +0000
++++ apex-develop/apex/amp/_process_optimizer.py	2022-02-08 08:14:28.996710550 +0000
 @@ -1,9 +1,53 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -161,7 +161,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  
  
  class AmpOptimizerState(object):
-@@ -25,97 +69,129 @@
+@@ -25,97 +69,130 @@
              master_params_to_model_params(fp16_group, fp32_from_fp16_group)
  
  
@@ -343,7 +343,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    # This is a lot of python overhead...
 +    if main_grads_combined is not None:
 +        scaler.unscale_with_stashed_combined(
-+            main_grads_combined, stashed_grads_combined,
++            main_grads_combined, 
++            stashed_grads_combined if not stashed_grads_are_zero else None,
 +            scale_override=(grads_have_scale, stashed_have_scale, out_scale))
 +    else:
          grads_needing_unscale = []
@@ -363,7 +364,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
                  continue
  
          # unscale() implements grads*(1/scale), so "scale" should be grads_have_scale/out_scale.
-@@ -123,130 +199,257 @@
+@@ -123,130 +200,215 @@
              scaler.unscale(
                  grads_needing_unscale,
                  grads_needing_unscale,
@@ -404,10 +405,16 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    if (self.accelerate or self.is_npu_fused_optimizer) and stash.already_combined:
 +        if stash.process_zero_grad:
 +            return
-+
+ 
+-    # for i, param in enumerate(stash.all_fp32_from_fp16_params):
+-    #     stash.all_fp32_from_fp16_grad_stash[i] = param.grad
 +        if stash.main_fp16_grad_combine is not None:
 +            stash.main_fp16_grad_combine.zero_()
-+
+ 
+-    for i, param in enumerate(stash.all_fp32_from_fp32_params):
+-        stash.all_fp32_from_fp32_grad_stash[i] = param.grad
+-        # Set up to leverage grad copy elision:
+-        param.grad = None
 +        if stash.main_fp32_from_fp32_grad_combine is not None:
 +            stash.all_fp32_from_fp32_grad_stash_combine.copy_(stash.main_fp32_from_fp32_grad_combine)
 +            stash.main_fp32_from_fp32_grad_combine.zero_()
@@ -416,9 +423,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +            # Set up to leverage grad copy elision.
 +            # This may behave differently from an unpatched optimizer if zero_grad is used and the param is unused.
 +            param.grad = None
- 
--    # for i, param in enumerate(stash.all_fp32_from_fp16_params):
--    #     stash.all_fp32_from_fp16_grad_stash[i] = param.grad
++
 +        # for i, param in enumerate(stash.all_fp32_from_fp16_params):
 +        #     stash.all_fp32_from_fp16_grad_stash[i] = param.grad
 +
@@ -426,57 +431,6 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +            stash.all_fp32_from_fp32_grad_stash[i] = param.grad
 +            # Set up to leverage grad copy elision:
 +            param.grad = None
-+
-+
-+@torch.no_grad()
-+def combined_init_with_master_weights(self):
-+    stash = self._amp_stash
-+    if stash.already_combined:
-+        return
-+
-+    if (not self.accelerate) and (not self.is_npu_fused_optimizer):
-+        return
- 
-     for i, param in enumerate(stash.all_fp32_from_fp32_params):
--        stash.all_fp32_from_fp32_grad_stash[i] = param.grad
--        # Set up to leverage grad copy elision:
--        param.grad = None
-+        if param.grad is not None:
-+            stash.all_fp32_from_fp32_grad_stash[i] = torch.zeros_like(param.grad)
-+
-+    if len(stash.all_fp32_from_fp32_grad_stash) > 0:
-+        stash.all_fp32_from_fp32_grad_stash_combine = combine_npu(stash.all_fp32_from_fp32_grad_stash)
-+
-+    all_fp16_params, all_fp32_from_fp16_params = [], []
-+    for fp16_param, fp32_from_fp16_param in zip(stash.all_fp16_params, stash.all_fp32_from_fp16_params):
-+        if fp16_param.grad is not None:
-+            all_fp16_params.append(fp16_param)
-+            all_fp32_from_fp16_params.append(fp32_from_fp16_param)
-+    stash.all_fp16_params = all_fp16_params
-+    stash.all_fp32_from_fp16_params = all_fp32_from_fp16_params
-+
-+    stash.main_fp16_grad_combine, stash.fp16_grad_list = get_grad_combined_tensor_from_param(stash.all_fp16_params)
-+
-+    for fp16_grad, fp32_from_fp16_param in zip(stash.fp16_grad_list, stash.all_fp32_from_fp16_params):
-+        if fp16_grad.storage().npu_format() != fp32_from_fp16_param.storage().npu_format():
-+            fp32_from_fp16_param.data = fp32_from_fp16_param.data.npu_format_cast(fp16_grad.storage().npu_format())
-+        fp32_from_fp16_param.grad = torch.zeros_like(fp32_from_fp16_param)
-+
-+    stash.main_fp32_from_fp16_grad_combine, stash.fp32_from_fp16_grad_list = \
-+        get_grad_combined_tensor_from_param(stash.all_fp32_from_fp16_params)
-+    stash.main_fp32_from_fp32_grad_combine, stash.fp32_from_fp32_grad_list = \
-+        get_grad_combined_tensor_from_param(stash.all_fp32_from_fp32_params)
-+    # please do not change the order of tensor in this list.
-+    stash.grads_list = [stash.main_fp16_grad_combine, 
-+                        stash.main_fp32_from_fp16_grad_combine, 
-+                        stash.main_fp32_from_fp32_grad_combine]
-+
-+    if self.is_npu_fused_optimizer:
-+        # stash.main_fp16_param_combine = combine_npu(stash.all_fp16_params)
-+        stash.main_fp32_from_fp16_param_combine = combine_npu(stash.all_fp32_from_fp16_params)
-+        stash.main_fp32_from_fp32_param_combine = combine_npu(stash.all_fp32_from_fp32_params)
-+    
-+    stash.already_combined = True
  
  
  def post_backward_with_master_weights(self, scaler):
@@ -637,6 +591,13 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 -        # Set up to leverage grad copy elision:
 -        param.grad = None
 +    if (self.accelerate or self.is_npu_fused_optimizer) and stash.already_combined:
++        if stash.process_zero_grad:
++            return
+ 
+-    for i, param in enumerate(stash.all_fp32_params):
+-        stash.all_fp32_grad_stash[i] = param.grad
+-        # Set up to leverage grad copy elision:
+-        param.grad = None
 +        if stash.main_fp16_grad_combine is not None:
 +            stash.all_fp16_grad_stash_combine.copy_(stash.main_fp16_grad_combine)
 +            stash.main_fp16_grad_combine.zero_()
@@ -648,11 +609,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +            stash.all_fp16_grad_stash[i] = param.grad
 +            # Set up to leverage grad copy elision:
 +            param.grad = None
- 
--    for i, param in enumerate(stash.all_fp32_params):
--        stash.all_fp32_grad_stash[i] = param.grad
--        # Set up to leverage grad copy elision:
--        param.grad = None
++
 +        for i, param in enumerate(stash.all_fp32_params):
 +            stash.all_fp32_grad_stash[i] = param.grad
 +            # Set up to leverage grad copy elision:
@@ -675,7 +632,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +            if main_grads_combined is not None:
 +                post_backward_models_are_masters(scaler, None, None, None, 
 +                                                 main_grads_combined, stash_grads_combined,
-+                                                 use_npu_fused_optimizer=self.is_npu_fused_optimizer)
++                                                 use_npu_fused_optimizer=self.is_npu_fused_optimizer,
++                                                 stashed_grads_are_zero=stash.process_zero_grad)
 +    else:
 +        split_types = ((stash.all_fp16_params, stash.all_fp16_grad_stash),
 +                 (stash.all_fp32_params, stash.all_fp32_grad_stash))
@@ -684,14 +642,72 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 -        post_backward_models_are_masters(scaler, params, stashed_grads)
 +        for params, stashed_grads in split_types:
 +            post_backward_models_are_masters(scaler, params, stashed_grads, 
-+                                             use_npu_fused_optimizer=self.is_npu_fused_optimizer)
++                                             use_npu_fused_optimizer=self.is_npu_fused_optimizer,
++                                             stashed_grads_are_zero=stash.process_zero_grad)
++    stash.process_zero_grad = False
  
  
  #####################################################################################
-@@ -318,6 +521,427 @@
+@@ -318,6 +480,514 @@
          stash.lazy_init_called = True
  
  
++@torch.no_grad()
++def combined_init_with_master_weights(self):
++    stash = self._amp_stash
++    if stash.already_combined:
++        return
++
++    if (not self.accelerate) and (not self.is_npu_fused_optimizer):
++        return
++
++    # fp32 from fp32
++    all_fp32_from_fp32_params, all_fp32_from_fp32_grad_stash = [], []
++    for param in stash.all_fp32_from_fp32_params:
++        if param.grad is not None:
++            if param.storage().npu_format() != param.grad.storage().npu_format():
++                param.grad = param.grad.npu_format_cast(param.storage().npu_format()).contiguous()
++            all_fp32_from_fp32_params.append(param)
++            all_fp32_from_fp32_grad_stash.append(torch.zeros_like(param.grad))
++    stash.all_fp32_from_fp32_params = all_fp32_from_fp32_params
++    stash.all_fp32_from_fp32_grad_stash = all_fp32_from_fp32_grad_stash
++
++    if len(stash.all_fp32_from_fp32_grad_stash) > 0:
++        stash.all_fp32_from_fp32_grad_stash_combine = combine_npu(stash.all_fp32_from_fp32_grad_stash)
++
++    # fp32 from fp16
++    all_fp16_params, all_fp32_from_fp16_params = [], []
++    for fp16_param, fp32_from_fp16_param in zip(stash.all_fp16_params, stash.all_fp32_from_fp16_params):
++        if fp16_param.grad is not None:
++            all_fp16_params.append(fp16_param)
++            all_fp32_from_fp16_params.append(fp32_from_fp16_param)
++    stash.all_fp16_params = all_fp16_params
++    stash.all_fp32_from_fp16_params = all_fp32_from_fp16_params
++
++    stash.main_fp16_grad_combine, stash.fp16_grad_list = get_grad_combined_tensor_from_param(stash.all_fp16_params)
++
++    for fp16_grad, fp32_from_fp16_param in zip(stash.fp16_grad_list, stash.all_fp32_from_fp16_params):
++        if fp16_grad.storage().npu_format() != fp32_from_fp16_param.storage().npu_format():
++            fp32_from_fp16_param.data = fp32_from_fp16_param.data.npu_format_cast(fp16_grad.storage().npu_format())
++        fp32_from_fp16_param.grad = torch.zeros_like(fp32_from_fp16_param)
++
++    stash.main_fp32_from_fp16_grad_combine, stash.fp32_from_fp16_grad_list = \
++        get_grad_combined_tensor_from_param(stash.all_fp32_from_fp16_params)
++    stash.main_fp32_from_fp32_grad_combine, stash.fp32_from_fp32_grad_list = \
++        get_grad_combined_tensor_from_param(stash.all_fp32_from_fp32_params)
++    # please do not change the order of tensor in this list.
++    stash.grads_list = [stash.main_fp16_grad_combine, 
++                        stash.main_fp32_from_fp16_grad_combine, 
++                        stash.main_fp32_from_fp32_grad_combine]
++
++    if self.is_npu_fused_optimizer:
++        # stash.main_fp16_param_combine = combine_npu(stash.all_fp16_params)
++        stash.main_fp32_from_fp16_param_combine = combine_npu(stash.all_fp32_from_fp16_params)
++        stash.main_fp32_from_fp32_param_combine = combine_npu(stash.all_fp32_from_fp32_params)
++    
++    stash.already_combined = True
++
++
 +@torch.no_grad()
 +def combined_init_no_master_weights(self):
 +    stash = self._amp_stash
@@ -704,6 +720,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    all_fp16_params, all_fp16_grad_stash = [], []
 +    for param in stash.all_fp16_params:
 +        if param.grad is not None:
++            if param.storage().npu_format() != param.grad.storage().npu_format():
++                param.grad = param.grad.npu_format_cast(param.storage().npu_format()).contiguous()
 +            all_fp16_params.append(param)
 +            all_fp16_grad_stash.append(torch.zeros_like(param.grad))
 +
@@ -713,6 +731,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    all_fp32_params, all_fp32_grad_stash = [], []
 +    for param in stash.all_fp32_params:
 +        if param.grad is not None:
++            if param.storage().npu_format() != param.grad.storage().npu_format():
++                param.grad = param.grad.npu_format_cast(param.storage().npu_format()).contiguous()
 +            all_fp32_params.append(param)
 +            all_fp32_grad_stash.append(torch.zeros_like(param.grad))
 +
@@ -744,13 +764,60 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    stash.param_states_are_combined_by_group = False
 +
 +
++def check_already_combined_params_and_grads_with_master_weights(self):
++    stash = self._amp_stash
++    if not self.check_combined_tensors or not stash.already_combined:
++        return
++
++    fp16_grad_list = []
++    for param in stash.all_fp16_params:
++        if param.requires_grad:
++            fp16_grad_list.append(param.grad)
++
++    fp32_from_fp16_grad_list = []
++    for param in stash.all_fp32_from_fp16_params:
++        if param.requires_grad:
++            fp32_from_fp16_grad_list.append(param.grad)
++
++    fp32_from_fp32_grad_list = []
++    for param in stash.all_fp32_from_fp32_params:
++        if param.requires_grad:
++            fp32_from_fp32_grad_list.append(param.grad)
++
++    if not is_combined_tensor_valid(stash.main_fp16_grad_combine, fp16_grad_list) or \
++        not is_combined_tensor_valid(stash.main_fp32_from_fp16_grad_combine, fp32_from_fp16_grad_list) or \
++        not is_combined_tensor_valid(stash.main_fp32_from_fp32_grad_combine, fp32_from_fp32_grad_list):
++        maybe_print("Combined grad has been destroyed and will be recombined afterwards, please check if "
++                    "there is any operation that may change the data_ptr/size/format of the grads.")
++        self._reset_all_combine_flags()
++        return
++
++    if self.is_npu_fused_optimizer:
++        if not is_combined_tensor_valid(stash.main_fp32_from_fp16_param_combine, stash.all_fp32_from_fp16_params) or \
++            not is_combined_tensor_valid(stash.main_fp32_from_fp32_param_combine, stash.all_fp32_from_fp32_params):
++            maybe_print("Combined param has been destroyed and will be recombined afterwards, please check if "
++                        "there is any operation that may change the data_ptr/size/format of the params.")
++            self._reset_all_combine_flags()
++            return
++
++
 +def check_already_combined_params_and_grads_no_master_weights(self):
 +    stash = self._amp_stash
 +    if not self.check_combined_tensors or not stash.already_combined:
 +        return
 +
-+    if not is_combined_tensor_valid(stash.main_fp16_grad_combine, stash.fp16_grad_list) or \
-+        not is_combined_tensor_valid(stash.main_fp32_grad_combine, stash.fp32_grad_list):
++    fp16_grad_list = []
++    for param in stash.all_fp16_params:
++        if param.requires_grad:
++            fp16_grad_list.append(param.grad)
++
++    fp32_grad_list = []
++    for param in stash.all_fp32_params:
++        if param.requires_grad:
++            fp32_grad_list.append(param.grad)
++
++    if not is_combined_tensor_valid(stash.main_fp16_grad_combine, fp16_grad_list) or \
++        not is_combined_tensor_valid(stash.main_fp32_grad_combine, fp32_grad_list):
 +        maybe_print("Combined grad has been destroyed and will be recombined afterwards, please check if "
 +                    "there is any operation that may change the data_ptr/size/format of the grads.")
 +        self._reset_all_combine_flags()
@@ -758,26 +825,6 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +
 +    if self.is_npu_fused_optimizer:
 +        if not is_combined_tensor_valid(stash.main_fp32_param_combine, stash.all_fp32_params):
-+            maybe_print("Combined param has been destroyed and will be recombined afterwards, please check if "
-+                        "there is any operation that may change the data_ptr/size/format of the params.")
-+            self._reset_all_combine_flags()
-+            return
-+
-+
-+def check_already_combined_params_and_grads_with_master_weights(self):
-+    stash = self._amp_stash
-+    if not self.check_combined_tensors or not stash.already_combined:
-+        return
-+
-+    if not is_combined_tensor_valid(stash.main_fp16_grad_combine, stash.fp16_grad_list) or \
-+        not is_combined_tensor_valid(stash.main_fp32_from_fp32_grad_combine, stash.fp32_from_fp32_grad_list):
-+        maybe_print("Combined grad has been destroyed and will be recombined afterwards, please check if "
-+                    "there is any operation that may change the data_ptr/size/format of the grads.")
-+        self._reset_all_combine_flags()
-+        return
-+
-+    if self.is_npu_fused_optimizer:
-+        if not is_combined_tensor_valid(stash.main_fp32_from_fp32_param_combine, stash.all_fp32_from_fp32_params):
 +            maybe_print("Combined param has been destroyed and will be recombined afterwards, please check if "
 +                        "there is any operation that may change the data_ptr/size/format of the params.")
 +            self._reset_all_combine_flags()
@@ -796,68 +843,6 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +        return True
 +    else:
 +        return False
-+
-+
-+def combine_params_and_grads_by_group_no_master_weights(self):
-+    stash = self._amp_stash
-+    if stash.params_grads_are_combined_by_group:
-+        return
-+
-+    self._amp_combined_init()
-+    stash.combined_params_indexed_by_group = []
-+    stash.combined_grads_indexed_by_group = []
-+    stash.params_lists_indexed_by_group = []
-+
-+    combined_fp32_param = stash.main_fp32_param_combine
-+    combined_fp32_grad = stash.main_fp32_grad_combine
-+
-+    combined_group_fp32_param_index = 0
-+    combined_group_fp32_grad_index = 0
-+
-+    group_num = 0
-+    for group in self.param_groups:
-+        group_num += 1
-+
-+        group_fp32_params = []
-+        group_fp32_param_size = 0
-+        group_fp32_grad_size = 0
-+
-+        for p in group['params']:
-+            if p.grad is None:
-+                continue
-+
-+            param_size = p.storage().size()
-+            group_fp32_param_size += param_size
-+            group_fp32_params.append(p)
-+
-+            grad_size = p.grad.storage().size()
-+            group_fp32_grad_size += grad_size
-+
-+        combined_group_fp32_param = None
-+        combined_group_fp32_grad = None
-+        combined_group_fp32_param = get_part_combined_tensor(combined_fp32_param, 
-+                                                             combined_group_fp32_param_index,
-+                                                             group_fp32_param_size)
-+        combined_group_fp32_grad = get_part_combined_tensor(combined_fp32_grad, 
-+                                                            combined_group_fp32_grad_index, 
-+                                                            group_fp32_grad_size)
-+        combined_group_fp32_param_index += group_fp32_param_size
-+        combined_group_fp32_grad_index += group_fp32_grad_size
-+
-+        combined_params = []
-+        combined_grads = []
-+        params_list = []
-+
-+        combined_params.append(combined_group_fp32_param)
-+        combined_grads.append(combined_group_fp32_grad)
-+        params_list.append(group_fp32_params)
-+
-+        stash.combined_params_indexed_by_group.append(combined_params)
-+        stash.combined_grads_indexed_by_group.append(combined_grads)
-+        stash.params_lists_indexed_by_group.append(params_list)
-+
-+    maybe_print("group num: {}".format(group_num))
-+    stash.params_grads_are_combined_by_group = True
 +
 +
 +def combine_params_and_grads_by_group_with_master_weights(self):
@@ -935,6 +920,68 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +        combined_grads.append(combined_group_fp32_from_fp16_grad)
 +        params_list.append(group_fp32_from_fp32_params)
 +        params_list.append(group_fp32_from_fp16_params)
++
++        stash.combined_params_indexed_by_group.append(combined_params)
++        stash.combined_grads_indexed_by_group.append(combined_grads)
++        stash.params_lists_indexed_by_group.append(params_list)
++
++    maybe_print("group num: {}".format(group_num))
++    stash.params_grads_are_combined_by_group = True
++
++
++def combine_params_and_grads_by_group_no_master_weights(self):
++    stash = self._amp_stash
++    if stash.params_grads_are_combined_by_group:
++        return
++
++    self._amp_combined_init()
++    stash.combined_params_indexed_by_group = []
++    stash.combined_grads_indexed_by_group = []
++    stash.params_lists_indexed_by_group = []
++
++    combined_fp32_param = stash.main_fp32_param_combine
++    combined_fp32_grad = stash.main_fp32_grad_combine
++
++    combined_group_fp32_param_index = 0
++    combined_group_fp32_grad_index = 0
++
++    group_num = 0
++    for group in self.param_groups:
++        group_num += 1
++
++        group_fp32_params = []
++        group_fp32_param_size = 0
++        group_fp32_grad_size = 0
++
++        for p in group['params']:
++            if p.grad is None:
++                continue
++
++            param_size = p.storage().size()
++            group_fp32_param_size += param_size
++            group_fp32_params.append(p)
++
++            grad_size = p.grad.storage().size()
++            group_fp32_grad_size += grad_size
++
++        combined_group_fp32_param = None
++        combined_group_fp32_grad = None
++        combined_group_fp32_param = get_part_combined_tensor(combined_fp32_param, 
++                                                             combined_group_fp32_param_index,
++                                                             group_fp32_param_size)
++        combined_group_fp32_grad = get_part_combined_tensor(combined_fp32_grad, 
++                                                            combined_group_fp32_grad_index, 
++                                                            group_fp32_grad_size)
++        combined_group_fp32_param_index += group_fp32_param_size
++        combined_group_fp32_grad_index += group_fp32_grad_size
++
++        combined_params = []
++        combined_grads = []
++        params_list = []
++
++        combined_params.append(combined_group_fp32_param)
++        combined_grads.append(combined_group_fp32_grad)
++        params_list.append(group_fp32_params)
 +
 +        stash.combined_params_indexed_by_group.append(combined_params)
 +        stash.combined_grads_indexed_by_group.append(combined_grads)
@@ -1116,7 +1163,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  def _process_optimizer(optimizer, properties):
      if hasattr(optimizer, "_amp_stash"):
          raise RuntimeError("A given optimizer should only be passed through amp.initialize once.")
-@@ -327,15 +951,64 @@
+@@ -327,15 +997,61 @@
      optimizer._amp_stash.lazy_init_called = False
      optimizer._amp_stash.already_patched = False
      optimizer._amp_stash.params_have_scaled_gradients = False
@@ -1153,36 +1200,33 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
          if hasattr(optimizer, name):
              raise RuntimeError("Incoming optimizer already has {} defined.".format(name))
  
-+    if properties.opt_level == "O2" and properties.combine_grad and properties.master_weights != True:
-+        raise RuntimeError("With opt_level O2, master_weights should be True when combine_grad is True")
-+
 +    if hasattr(optimizer, "is_npu_fused_optimizer") and optimizer.is_npu_fused_optimizer is True:
 +        maybe_print("Use npu fused optimizer")
++        if properties.opt_level != "O1" and properties.opt_level != "O2":
++            raise RuntimeError("Currently, npu fused optimizer can only be used when opt_level='O1' or opt_level='O2'")
 +    else:
 +        optimizer.is_npu_fused_optimizer = False
 +
-+    if optimizer.is_npu_fused_optimizer:
-+        if properties.opt_level != "O1" and properties.opt_level != "O2":
-+            raise RuntimeError("Currently, npu fused optimizer can only be used when opt_level='O1' or opt_level='O2'")
-+
++    if properties.combine_grad or optimizer.is_npu_fused_optimizer:
 +        if properties.opt_level == "O2" and properties.master_weights != True:
-+            raise RuntimeError("With opt_level O2, master_weights should be True when npu fused optimizer is used")
++            raise RuntimeError("With opt_level O2, master_weights should be True when combine_grad is True or "
++                               "npu fused optimizer is used")
++    else:
++        if properties.check_combined_tensors:
++            maybe_print("Because combine_grad != True and no npu fused optimizer is used, "
++                        "checking combined tensors function will not take effect!")
 +
++    if optimizer.is_npu_fused_optimizer:
 +        old_load_state_dict = optimizer.load_state_dict
 +        def new_load_state_dict(self, state_dict):
 +            old_load_state_dict(state_dict)
 +            self._amp_stash.param_states_are_combined_by_group = False
 +        optimizer.load_state_dict = types.MethodType(new_load_state_dict, optimizer)
 +
-+    if not properties.combine_grad and not optimizer.is_npu_fused_optimizer and \
-+        properties.check_combined_tensors:
-+        maybe_print("Because combine_grad != True and no npu fused optimizer is used, "
-+                    "checking combined tensors function will not take effect!")
-+
      # TODO:  Centralize exposure and import error checking for the C backend.
      if multi_tensor_applier.available:
          import amp_C
-@@ -352,34 +1025,31 @@
+@@ -352,34 +1068,31 @@
  
          old_step = optimizer.step
          def new_step(self, closure=None):
@@ -1232,7 +1276,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  
          if isinstance(optimizer, FusedSGD):
              optimizer._prepare_amp_backward = types.MethodType(
-@@ -391,10 +1061,35 @@
+@@ -391,10 +1104,37 @@
                  prepare_backward_with_master_weights, optimizer)
              optimizer._post_amp_backward = types.MethodType(
                  post_backward_with_master_weights, optimizer)
@@ -1251,6 +1295,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +                self._amp_lazy_init()
 +                self._check_already_combined_params_and_grads()
 +                # Zero the model grads.
++                stash.process_zero_grad = True
++
 +                if not stash.already_combined:
 +                    old_zero_grad()
 +                    return
@@ -1268,7 +1314,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
          if isinstance(optimizer, FusedSGD):
              optimizer._prepare_amp_backward = types.MethodType(
                  prepare_backward_no_master_weights_FusedSGD, optimizer)
-@@ -406,7 +1101,19 @@
+@@ -406,7 +1146,19 @@
              optimizer._post_amp_backward = types.MethodType(
                  post_backward_no_master_weights, optimizer)
  
@@ -1288,7 +1334,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  
      old_add_param_group = optimizer.add_param_group
  
-@@ -435,13 +1142,13 @@
+@@ -435,13 +1187,13 @@
              fp32_from_fp16_params_this_group = []
              for i, param in enumerate(new_group['params']):
                  if param.requires_grad:
@@ -1304,7 +1350,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
                          fp32_params_this_group.append(param)
                          new_group['params'][i] = param
                      else:
-@@ -471,10 +1178,10 @@
+@@ -471,10 +1223,10 @@
              #     param.grad = None
          else:
              for param in new_group['params']:
@@ -1469,7 +1515,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/handle.py apex-develop/apex/amp/handle.
                                      opt.scale_set_by_backward = False
 diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.py
 --- apex/apex/amp/scaler.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/scaler.py	2021-11-06 03:43:48.950426136 +0000
++++ apex-develop/apex/amp/scaler.py	2022-02-08 08:14:28.996710550 +0000
 @@ -1,7 +1,25 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -1679,7 +1725,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
          if self._has_overflow:
              return
  
-@@ -181,15 +256,67 @@
+@@ -181,15 +256,70 @@
                                               stashed_master_grads,
                                               master_grads,
                                               out_scale/grads_have_scale,
@@ -1704,7 +1750,10 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
 +        if scale_override is not None:
 +            grads_have_scale, stashed_have_scale, out_scale = scale_override
 +
-+        grads_combined.data[:] = grads_combined.mul_(out_scale/grads_have_scale) + stashed_grads_combined
++        if stashed_grads_combined is None:
++            grads_combined.data[:] = grads_combined.mul_(out_scale/grads_have_scale)
++        else:
++            grads_combined.data[:] = grads_combined.mul_(out_scale/grads_have_scale) + stashed_grads_combined
 +
 +    def unscale_grad_O2(self,
 +                        model_grads_combined=None,
@@ -1748,7 +1797,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
          if self.has_fused_kernel:
              self._overflow_buf.zero_()
  
-@@ -202,16 +329,16 @@
+@@ -202,16 +332,16 @@
          if self._has_overflow and self.dynamic:
              should_skip = True
              if(self._min_loss_scale):
