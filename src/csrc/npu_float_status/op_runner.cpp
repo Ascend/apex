@@ -18,7 +18,7 @@
 #include <limits>
 #include "common.h"
 #include <torch/extension.h>
-#include <ATen/npu/NPUEvent.h>
+#include <c10/npu/NPUEvent.h>
 
 using namespace std;
 
