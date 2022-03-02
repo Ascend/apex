@@ -12,7 +12,7 @@
 
 在您第一次向 ascend社区提交代码之前，需要签署 CLA。
 
-对于个人贡献者，详细信息请参考[ICLA 在线文档](https://www.mindspore.cn/icla)。
+对于个人贡献者，详细信息请参考[ICLA 在线文档](https://clasign.osinfra.cn/sign/Z210ZWUIMkZhc2NlbmQ=)。
 
 <h2 id="入门.md">入门</h2>
 
