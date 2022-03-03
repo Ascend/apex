@@ -1,24 +1,127 @@
-diff -Nur '--exclude=.git' apex/.gitignore apex-develop/.gitignore
---- apex/.gitignore	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/.gitignore	1970-01-01 00:00:00.000000000 +0000
-@@ -1,5 +0,0 @@
--apex.egg-info
--dist
--build
--docs/build
--*~
-\ No newline at end of file
-diff -Nur '--exclude=.git' apex/.gitmodules apex-develop/.gitmodules
---- apex/.gitmodules	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/.gitmodules	1970-01-01 00:00:00.000000000 +0000
-@@ -1,4 +0,0 @@
--[submodule "apex/contrib/csrc/multihead_attn/cutlass"]
--	path = apex/contrib/csrc/multihead_attn/cutlass
--	url = https://github.com/NVIDIA/cutlass.git
--	branch = v1.2.0
-diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_initialize.py
---- apex/apex/amp/_initialize.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/_initialize.py	2021-11-06 03:43:48.950426136 +0000
+diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/frontend.py
+--- apex/apex/amp/frontend.py	2022-03-02 09:38:05.237834906 +0800
++++ apex-develop/apex/amp/frontend.py	2022-03-01 11:59:37.597049607 +0800
+@@ -19,6 +19,10 @@
+             "keep_batchnorm_fp32" : None,
+             "master_weights" : None,
+             "loss_scale" : 1.0,
++            "combine_grad": None,
++            "combine_ddp": None,
++            "ddp_replica_count": 4,
++            "check_combined_tensors": None,
+             # Reserved for future functionality
+             # "fused_optimizer" : False,
+             # "enable_ddp_interop" : False,
+@@ -91,6 +95,15 @@
+                         self.options[name] = value
+                     else:
+                         self.options[name] = float(value)
++                elif name == "combine_grad" or name == "check_combined_tensors":
++                    if self.opt_level not in ["O1", "O2"] and value:
++                        warn_or_err("Currently, combine_grad=True or check_combined_tensors=True should only be set "
++                                    "by selecting opt_level='O1' or opt_level='O2'.")
++                    self.options[name] = value
++                elif name == "combine_ddp":
++                    if not self.combine_grad:
++                        warn_or_err("Combine_grad should be True when combine_ddp using.. \n")
++                    self.options[name] = value
+                 else:
+                     self.options[name] = value
+         else:
+@@ -161,6 +174,7 @@
+         properties.keep_batchnorm_fp32 = None
+         properties.master_weights = None
+         properties.loss_scale = "dynamic"
++        properties.combine_grad = None
+         # properties.fused_optimizer = False
+         # properties.enable_ddp_interop = False
+         return properties # modified in place so this isn't really necessary
+@@ -205,8 +219,16 @@
+     cast_model_outputs=None,
+     num_losses=1,
+     verbosity=1,
++    dynamic_init_scale=2.**16,
++    scale_growth_factor=2.,
++    scale_backoff_factor=0.5,
++    scale_window=2000,
+     min_loss_scale=None,
+-    max_loss_scale=2.**24
++    max_loss_scale=2.**24,
++    combine_grad=None,
++    combine_ddp=None,
++    ddp_replica_count=4,
++    check_combined_tensors=None
+     ):
+     """
+     Initialize your models, optimizers, and the Torch tensor and functional namespace according to the
+@@ -254,11 +276,30 @@
+             support multiple losses/backward passes, but use a single global loss scale
+             for all of them.
+         verbosity (int, default=1):  Set to 0 to suppress Amp-related output.
++        dynamic_init_scale (float, optional, default=2.**16):  Initial dynamic loss scale factor.
++        scale_growth_factor (float, optional, default=2.0):  Factor by which the scale is multiplied
++            if no overflow occurs for ``scale_window`` consecutive iterations.
++            If dynamic loss scaling is not used, `scale_growth_factor` is ignored.
++        scale_backoff_factor (float, optional, default=0.5):  Factor by which the scale is multiplied
++            if overflow occurs in an iteration. If dynamic loss scaling is not used, `scale_backoff_factor` is ignored.
++        scale_window (int, optional, default=2000):  Number of consecutive iterations without overflow
++            that must occur for the scale to be multiplied by ``scale_growth_factor``.
++            If dynamic loss scaling is not used, `scale_window` is ignored.
+         min_loss_scale (float, default=None):  Sets a floor for the loss scale values that can be chosen by dynamic
+             loss scaling.  The default value of None means that no floor is imposed.
+             If dynamic loss scaling is not used, `min_loss_scale` is ignored.
+         max_loss_scale (float, default=2.**24):  Sets a ceiling for the loss scale values that can be chosen by
+             dynamic loss scaling.  If dynamic loss scaling is not used, `max_loss_scale` is ignored.
++        combine_grad (bool, optional, default=None): If True, make gradients fused for unscale.
++        combine_ddp (bool, optional, default=None): If True, use combined gradients for data exchange,
++            accelerate multi-card training, and functionally replace DistributedDataParallel.
++        ddp_replica_count (bool, optional, default=4): Set the number of replicas of combined gradients.
++            Theoretically, the more replicas, the higher the degree of parallelism, but the time-consuming
++            distribution operation itself will lead to a decrease in performance even though the degree
++            of parallelism is improved. Therefore, we limit and optimize the replica size for data exchange.
++            The final number of replicas is not necessarily exactly the same as the set number
++        check_combined_tensors (bool, optional, default=None): If True, check if the combined grads and combined params
++            are valid during training
+ 
+     Returns:
+         Model(s) and optimizer(s) modified according to the ``opt_level``.
+@@ -306,6 +347,7 @@
+         https://github.com/NVIDIA/apex/issues
+     """
+     _amp_state.opt_properties = Properties()
++    # Here add a switch to open combine tensor
+     _amp_state.verbosity = verbosity
+ 
+     if not enabled:
+@@ -330,6 +372,10 @@
+         for k, v in _amp_state.opt_properties.options.items():
+             maybe_print("{:22} : {}".format(k, v), True)
+ 
++    _amp_state.dynamic_init_scale = dynamic_init_scale
++    _amp_state.scale_growth_factor = scale_growth_factor
++    _amp_state.scale_backoff_factor = scale_backoff_factor
++    _amp_state.scale_window = scale_window
+     _amp_state.min_loss_scale = min_loss_scale
+     _amp_state.max_loss_scale = max_loss_scale
+ 
+@@ -350,6 +396,14 @@
+         _amp_state.opt_properties.master_weights = master_weights
+     if loss_scale is not None:
+         _amp_state.opt_properties.loss_scale = loss_scale
++    if combine_grad is not None:
++        _amp_state.opt_properties.combine_grad = combine_grad
++    if combine_ddp is not None:
++        _amp_state.opt_properties.combine_ddp = combine_ddp
++    if ddp_replica_count is not None:
++        _amp_state.opt_properties.ddp_replica_count = ddp_replica_count
++    if check_combined_tensors is not None:
++        _amp_state.opt_properties.check_combined_tensors = check_combined_tensors
+ 
+     maybe_print("After processing overrides, optimization options are:", True)
+     for k, v in _amp_state.opt_properties.options.items():
+diff -Nur '--exclude=.git' apex/apex/amp/handle.py apex-develop/apex/amp/handle.py
+--- apex/apex/amp/handle.py	2022-03-02 09:38:05.237834906 +0800
++++ apex-develop/apex/amp/handle.py	2022-03-01 11:59:37.597049607 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -36,10 +139,68 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_i
 +# See the License for the specific language governing permissions and
 +# limitations under the License.
 +
+ import contextlib
+ import warnings
+ import sys
+@@ -110,6 +126,9 @@
+                 if not optimizer._amp_stash.params_have_scaled_gradients:
+                     optimizer._prepare_amp_backward()
+ 
++    if loss_scaler.dynamic:
++        LossScaler.clear_npu_overflow_flag()
++
+     yield (loss.float())*loss_scale
+ 
+     if delay_unscale:
+@@ -142,8 +161,12 @@
+                                 # Maybe skip should delegate to a method owned by the optimizers themselves.
+                                 if hasattr(opt._amp_stash, "all_fp32_from_fp16_params"):
+                                     # Clear the master grads that wouldn't be zeroed by model.zero_grad()
+-                                    for param in opt._amp_stash.all_fp32_from_fp16_params:
+-                                        param.grad = None
++                                    if opt.accelerate or opt.is_npu_fused_optimizer:
++                                        if opt._amp_stash.main_fp32_from_fp16_grad_combine is not None:
++                                            opt._amp_stash.main_fp32_from_fp16_grad_combine.zero_()
++                                    else:
++                                        for param in opt._amp_stash.all_fp32_from_fp16_params:
++                                            param.grad = None
+                                 if hasattr(opt, "most_recent_scale"):
+                                     opt.most_recent_scale = 1.0
+                                     opt.scale_set_by_backward = False
+diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_initialize.py
+--- apex/apex/amp/_initialize.py	2022-03-02 09:38:05.237834906 +0800
++++ apex-develop/apex/amp/_initialize.py	2022-03-01 11:59:37.597049607 +0800
+@@ -1,9 +1,26 @@
++# Copyright (c) 2020, Huawei Technologies.
++# Copyright (c) 2019, NVIDIA CORPORATION.
++# All rights reserved.
++#
++# Licensed under the BSD 3-Clause License  (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++# https://opensource.org/licenses/BSD-3-Clause
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++import sys
++from types import MethodType
++import functools
  import torch
  from torch._six import string_classes
- import functools
-@@ -20,9 +36,9 @@
+-import functools
++import torch.distributed as dist
+ import numpy as np
+-import sys
+-from types import MethodType
+ import warnings
+ from ._amp_state import _amp_state, warn_or_err, container_abcs
+ from .handle import disable_casts
+@@ -20,9 +37,9 @@
  
  def to_type(dtype, t):
      if isinstance(t, torch.Tensor):
@@ -51,7 +212,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_i
          # GANs require this.
          # if t.requires_grad:
          #     warn_or_err("input data requires grad.  Since input data is not a model parameter,\n"
-@@ -81,15 +97,15 @@
+@@ -81,15 +98,15 @@
          for name, param in model.named_parameters():
              if param.is_floating_point():
                  if 'Half' in param.type():
@@ -72,7 +233,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_i
                          name, param.type()))
  
          # Backward compatibility for PyTorch 0.4
-@@ -104,15 +120,15 @@
+@@ -104,15 +121,15 @@
                  name, buf = obj, buf_iter[obj]
              if buf.is_floating_point():
                  if 'Half' in buf.type():
@@ -93,7 +254,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_i
                          name, buf.type()))
  
  
-@@ -227,6 +243,10 @@
+@@ -227,6 +244,10 @@
      _amp_state.loss_scalers = []
      for _ in range(num_losses):
          _amp_state.loss_scalers.append(LossScaler(properties.loss_scale,
@@ -104,10 +265,22 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_i
                                                    min_loss_scale=_amp_state.min_loss_scale,
                                                    max_loss_scale=_amp_state.max_loss_scale))
  
+@@ -245,6 +266,11 @@
+ 
+             optimizer.step = MethodType(patch_step(optimizer.step), optimizer)
+ 
++    if properties.combine_ddp:
++        for model in models:
++            for name, param in model.named_parameters():
++                dist.broadcast(param, 0)
++
+     if optimizers_was_list:
+         if models_was_list:
+             return models, optimizers
 diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex/amp/_process_optimizer.py
---- apex/apex/amp/_process_optimizer.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/_process_optimizer.py	2022-02-08 08:14:28.996710550 +0000
-@@ -1,9 +1,53 @@
+--- apex/apex/amp/_process_optimizer.py	2022-03-02 09:38:05.237834906 +0800
++++ apex-develop/apex/amp/_process_optimizer.py	2022-03-01 11:59:37.597049607 +0800
+@@ -1,9 +1,54 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
 +# All rights reserved.
@@ -125,14 +298,17 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +# limitations under the License.
 +
  import types
++import torch
++from torch._six import inf
++from change_data_ptr import change_data_ptr
++import torch.distributed as dist
++from ._amp_state import maybe_print
  from ..fp16_utils import master_params_to_model_params
  from ..multi_tensor_apply import multi_tensor_applier
- from ._amp_state import maybe_print
- import torch
-+from torch._six import inf
+-from ._amp_state import maybe_print
+-import torch
  from ..optimizers import FusedSGD
 +from ..contrib.combine_tensors import combine_npu, get_part_combined_tensor, is_combined_tensor_valid
-+
 +
 +def get_grad_combined_tensor_from_param(list_of_params):
 +    if len(list_of_params) > 0 and list_of_params[0].grad is not None:
@@ -161,7 +337,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  
  
  class AmpOptimizerState(object):
-@@ -25,97 +69,130 @@
+@@ -25,97 +70,130 @@
              master_params_to_model_params(fp16_group, fp32_from_fp16_group)
  
  
@@ -364,7 +540,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
                  continue
  
          # unscale() implements grads*(1/scale), so "scale" should be grads_have_scale/out_scale.
-@@ -123,130 +200,215 @@
+@@ -123,130 +201,347 @@
              scaler.unscale(
                  grads_needing_unscale,
                  grads_needing_unscale,
@@ -423,22 +599,43 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +            # Set up to leverage grad copy elision.
 +            # This may behave differently from an unpatched optimizer if zero_grad is used and the param is unused.
 +            param.grad = None
-+
+ 
 +        # for i, param in enumerate(stash.all_fp32_from_fp16_params):
 +        #     stash.all_fp32_from_fp16_grad_stash[i] = param.grad
-+
+ 
+-def post_backward_with_master_weights(self, scaler):
 +        for i, param in enumerate(stash.all_fp32_from_fp32_params):
 +            stash.all_fp32_from_fp32_grad_stash[i] = param.grad
 +            # Set up to leverage grad copy elision:
 +            param.grad = None
- 
- 
- def post_backward_with_master_weights(self, scaler):
++
++
++def combine_ddp_hook_func(name, target_grads_size_list, current_param_size_list,
++              name_dict, reduce_stream, partial_combined_grad_list, ready_reduce_index, world_size):
++    def hook_function(grad):
++        if ready_reduce_index:
++            index = ready_reduce_index.pop()
++            current_param_size_list[index] = 0
++            partial_combined_grad_list[index].div_(world_size)
++            reduce_stream.wait_stream(torch.npu.current_stream())
++            with torch.npu.stream(reduce_stream):
++                dist.all_reduce(partial_combined_grad_list[index])
++
++        current_param_size_list[name_dict[name]] += grad.storage().size()
++        for i, _ in enumerate(current_param_size_list):
++            if current_param_size_list[i] == target_grads_size_list[i] and current_param_size_list[i] != 0:
++                ready_reduce_index.append(i)
++                break
++    return hook_function
++
++
++def init_combine_ddp_no_master_weights(self):
      stash = self._amp_stash
++    combined_grads_list = [stash.main_fp32_grad_combine]
++    params_list = [stash.all_fp32_params]
  
-     self._amp_lazy_init()
-+    self._check_already_combined_params_and_grads()
-+    self._amp_combined_init()
+-    self._amp_lazy_init()
++    return self._init_combine_ddp_common(combined_grads_list, params_list)
  
 -    # This is a lot of python overhead...
 -    fp16_grads_needing_unscale = []
@@ -448,7 +645,29 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 -    for fp16_param, fp32_param in zip(stash.all_fp16_params,
 -                                      stash.all_fp32_from_fp16_params):
 -        if fp16_param.grad is None and fp32_param.grad is not None:
--            continue
++
++def init_combine_ddp_with_master_weights(self):
++    stash = self._amp_stash
++    combined_grads_list = [stash.main_fp16_grad_combine, stash.main_fp32_from_fp32_grad_combine]
++    params_list = [stash.all_fp16_params, stash.all_fp32_from_fp32_params]
++
++    return self._init_combine_ddp_common(combined_grads_list, params_list)
++
++
++def init_combine_ddp_common(self, combined_grads_list, params_list):
++    exchange_threshold_max = 24 * 1024 * 1024
++    exchange_threshold_min = 1 * 1024 * 1024
++    ddp_replica_count = self.ddp_replica_count
++    world_size = dist.get_world_size()
++    all_reduce_stream = torch.npu.Stream()
++    exchange_threshold_list = [0 for _ in combined_grads_list]
++    target_grads_size_lists = [[] for _ in combined_grads_list]
++    name_dict_list = [{} for _ in combined_grads_list]
++    partial_combined_grad_lists = [[] for _ in combined_grads_list]
++
++    for idx, combined_grads in enumerate(combined_grads_list):
++        if combined_grads is None:
+             continue
 -        elif fp16_param.grad is not None and fp32_param.grad is None:
 -            fp32_param.grad = torch.empty_like(fp32_param)
 -            fp16_grads_needing_unscale.append(fp16_param.grad)
@@ -457,8 +676,40 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 -            fp16_grads_needing_unscale_with_stash.append(fp16_param.grad)
 -            preexisting_fp32_grads.append(fp32_param.grad)
 -        else: # fp16_param.grad is None and fp32_param.grad is None:
--            continue
--
++
++        tmp_combined_grads_len = combined_grads.shape[0] // ddp_replica_count
++        exchange_threshold_list[idx] = min(tmp_combined_grads_len, exchange_threshold_max \
++            if combined_grads.type() == 'torch.npu.FloatTensor' else exchange_threshold_max * 2)
++        exchange_threshold_list[idx] = max(exchange_threshold_list[idx], exchange_threshold_min)
++        dist.all_reduce(combined_grads.div_(world_size))
++
++    for idx, params in enumerate(params_list):
++        target_grads_size_list = target_grads_size_lists[idx]
++        name_dict = name_dict_list[idx]
++        tmp_size = 0
++        name_order = 0
++        for param_idx, param in enumerate(params):
++            name = '%d_%d'%(idx, param_idx)
++            cur_size = param.grad.storage().size()
++            if cur_size > exchange_threshold_list[idx] and tmp_size != 0:
++                target_grads_size_list.append(tmp_size)
++                tmp_size = 0
++                name_order += 1
++            tmp_size += cur_size
++            name_dict[name] = name_order
++            if tmp_size > exchange_threshold_list[idx]:
++                target_grads_size_list.append(tmp_size)
++                tmp_size = 0
++                name_order += 1
++        if tmp_size != 0:
++            target_grads_size_list.append(tmp_size)
++    maybe_print('Optimized combine_ddp replicas: {}'.format(target_grads_size_lists), rank0=True)
++
++    for idx, target_grads_size_list in enumerate(target_grads_size_lists):
++        combined_grads = combined_grads_list[idx]
++        if combined_grads is None:
+             continue
+ 
 -    if len(fp16_grads_needing_unscale) > 0:
 -        scaler.unscale(
 -            fp16_grads_needing_unscale,
@@ -477,6 +728,61 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 -        scaler,
 -        stash.all_fp32_from_fp32_params,
 -        stash.all_fp32_from_fp32_grad_stash)
++        ptr_index = 0
++        partial_combined_grad_list = partial_combined_grad_lists[idx]
++        for target_grads_size in target_grads_size_list:
++            partial_combined_grad_list.append(get_part_combined_tensor(combined_grads, ptr_index, target_grads_size))
++            ptr_index += target_grads_size
++
++    current_param_size_lists = [[0] * len(target_grads_size_list) for target_grads_size_list in
++                               target_grads_size_lists]
++    ready_reduce_index_list = [[] for _ in combined_grads_list]
++
++    for idx, params in enumerate(params_list):
++        for param_idx, param in enumerate(params):
++            name = '%d_%d'%(idx, param_idx)
++            param.register_hook(
++                combine_ddp_hook_func(name, target_grads_size_lists[idx], current_param_size_lists[idx],
++                          name_dict_list[idx], all_reduce_stream, partial_combined_grad_lists[idx],
++                          ready_reduce_index_list[idx], world_size))
++
++    self.ready_reduce_index_list = ready_reduce_index_list
++    self.partial_combined_grad_lists = partial_combined_grad_lists
++    self.current_param_size_lists = current_param_size_lists
++    self.all_reduce_stream = all_reduce_stream
++    self.world_size = world_size
++
++
++def combine_ddp_all_reduce(self):
++    last_reduce_grad_list = []
++    for idx, partial_combined_grad_list in enumerate(self.partial_combined_grad_lists):
++        if partial_combined_grad_list:
++            last_reduce_grad = partial_combined_grad_list[self.ready_reduce_index_list[idx][0]]
++            last_reduce_grad.div_(self.world_size)
++            last_reduce_grad_list.append(last_reduce_grad)
++
++    torch.npu.current_stream().wait_stream(self.all_reduce_stream)
++    for idx, last_reduce_grad in enumerate(last_reduce_grad_list):
++        dist.all_reduce(last_reduce_grad)
++        self.current_param_size_lists[idx][self.ready_reduce_index_list[idx][0]] = 0
++        self.ready_reduce_index_list[idx].pop()
++
++def combine_ddp_proc(self):
++    if self.combine_ddp:
++        if not self.init_combine_ddp:
++            self._init_combine_ddp()
++            self.init_combine_ddp = True
++        else:
++            self._combine_ddp_all_reduce()
++
++def post_backward_with_master_weights(self, scaler):
++    stash = self._amp_stash
++
++    self._amp_lazy_init()
++    self._check_already_combined_params_and_grads()
++    self._amp_combined_init()
++    self._combine_ddp_proc()
++
 +    if self.accelerate:
 +        scaler.unscale_grad_O2(
 +            model_grads_combined=stash.main_fp16_grad_combine,
@@ -622,9 +928,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
      self._amp_lazy_init()
 +    self._check_already_combined_params_and_grads()
 +    self._amp_combined_init()
- 
--    split_types = ((stash.all_fp16_params, stash.all_fp16_grad_stash),
--             (stash.all_fp32_params, stash.all_fp32_grad_stash))
++    self._combine_ddp_proc()
++
 +    if self.accelerate:
 +        split_types = ((stash.main_fp16_grad_combine, stash.all_fp16_grad_stash_combine),
 +                (stash.main_fp32_grad_combine, stash.all_fp32_grad_stash_combine))
@@ -638,6 +943,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +        split_types = ((stash.all_fp16_params, stash.all_fp16_grad_stash),
 +                 (stash.all_fp32_params, stash.all_fp32_grad_stash))
  
+-    split_types = ((stash.all_fp16_params, stash.all_fp16_grad_stash),
+-             (stash.all_fp32_params, stash.all_fp32_grad_stash))
+-
 -    for params, stashed_grads in split_types:
 -        post_backward_models_are_masters(scaler, params, stashed_grads)
 +        for params, stashed_grads in split_types:
@@ -648,7 +956,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  
  
  #####################################################################################
-@@ -318,6 +480,514 @@
+@@ -318,6 +613,514 @@
          stash.lazy_init_called = True
  
  
@@ -1163,11 +1471,14 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  def _process_optimizer(optimizer, properties):
      if hasattr(optimizer, "_amp_stash"):
          raise RuntimeError("A given optimizer should only be passed through amp.initialize once.")
-@@ -327,15 +997,61 @@
+@@ -327,15 +1130,64 @@
      optimizer._amp_stash.lazy_init_called = False
      optimizer._amp_stash.already_patched = False
      optimizer._amp_stash.params_have_scaled_gradients = False
 +    optimizer.accelerate = properties.combine_grad
++    optimizer.combine_ddp = properties.combine_ddp
++    optimizer.init_combine_ddp = False
++    optimizer.ddp_replica_count = properties.ddp_replica_count
 +    optimizer.check_combined_tensors = properties.check_combined_tensors
 +    optimizer._amp_stash.master_weights = properties.master_weights
 +    optimizer._amp_stash.grads_list = []
@@ -1226,7 +1537,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
      # TODO:  Centralize exposure and import error checking for the C backend.
      if multi_tensor_applier.available:
          import amp_C
-@@ -352,34 +1068,31 @@
+@@ -352,34 +1204,28 @@
  
          old_step = optimizer.step
          def new_step(self, closure=None):
@@ -1239,10 +1550,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
              # Clear the master grads that wouldn't be zeroed by model.zero_grad()
 -            for param in self._amp_stash.all_fp32_from_fp16_params:
 -                param.grad = None
-+            if optimizer.accelerate or optimizer.is_npu_fused_optimizer:
-+                if stash.main_fp32_from_fp16_grad_combine is not None:
-+                    stash.main_fp32_from_fp16_grad_combine.zero_()
-+            else:
++            if not optimizer.accelerate and not optimizer.is_npu_fused_optimizer:
 +                for param in stash.all_fp32_from_fp16_params:
 +                    param.grad = None
              return retval
@@ -1276,10 +1584,12 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
  
          if isinstance(optimizer, FusedSGD):
              optimizer._prepare_amp_backward = types.MethodType(
-@@ -391,10 +1104,37 @@
+@@ -391,10 +1237,39 @@
                  prepare_backward_with_master_weights, optimizer)
              optimizer._post_amp_backward = types.MethodType(
                  post_backward_with_master_weights, optimizer)
++            optimizer._init_combine_ddp = types.MethodType(
++                init_combine_ddp_with_master_weights, optimizer)
 +        
 +        optimizer._amp_combined_init = types.MethodType(combined_init_with_master_weights, optimizer)
 +        optimizer._check_already_combined_params_and_grads = types.MethodType(
@@ -1314,14 +1624,17 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
          if isinstance(optimizer, FusedSGD):
              optimizer._prepare_amp_backward = types.MethodType(
                  prepare_backward_no_master_weights_FusedSGD, optimizer)
-@@ -406,7 +1146,19 @@
+@@ -405,8 +1280,25 @@
+                 prepare_backward_no_master_weights, optimizer)
              optimizer._post_amp_backward = types.MethodType(
                  post_backward_no_master_weights, optimizer)
- 
++            optimizer._init_combine_ddp = types.MethodType(
++                init_combine_ddp_no_master_weights, optimizer)
++
 +        optimizer._amp_combined_init = types.MethodType(combined_init_no_master_weights, optimizer)
 +        optimizer._check_already_combined_params_and_grads = types.MethodType(
 +            check_already_combined_params_and_grads_no_master_weights, optimizer)
-+
+ 
      optimizer._amp_lazy_init = types.MethodType(_amp_lazy_init, optimizer)
 +    optimizer._reset_all_combine_flags = types.MethodType(reset_all_combine_flags, optimizer)
 +    optimizer._can_get_combined_tensors = types.MethodType(can_get_combined_tensors, optimizer)
@@ -1331,10 +1644,13 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    optimizer.get_optimizer_combined_grads = types.MethodType(get_optimizer_combined_grads, optimizer)
 +    optimizer.get_optimizer_combined_grad_masks = types.MethodType(get_optimizer_combined_grad_masks, optimizer)
 +    optimizer.get_optimizer_clip_grad_norm_fused = types.MethodType(get_optimizer_clip_grad_norm_fused, optimizer)
++    optimizer._combine_ddp_proc = types.MethodType(combine_ddp_proc, optimizer)
++    optimizer._init_combine_ddp_common = types.MethodType(init_combine_ddp_common, optimizer)
++    optimizer._combine_ddp_all_reduce = types.MethodType(combine_ddp_all_reduce, optimizer)
  
      old_add_param_group = optimizer.add_param_group
  
-@@ -435,13 +1187,13 @@
+@@ -435,13 +1327,13 @@
              fp32_from_fp16_params_this_group = []
              for i, param in enumerate(new_group['params']):
                  if param.requires_grad:
@@ -1350,7 +1666,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
                          fp32_params_this_group.append(param)
                          new_group['params'][i] = param
                      else:
-@@ -471,10 +1223,10 @@
+@@ -471,10 +1363,10 @@
              #     param.grad = None
          else:
              for param in new_group['params']:
@@ -1363,159 +1679,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
                      stash.all_fp32_params.append(param)
                      stash.all_fp32_grad_stash.append(None)
                  else:
-diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/frontend.py
---- apex/apex/amp/frontend.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/frontend.py	2021-11-06 03:43:48.950426136 +0000
-@@ -19,6 +19,8 @@
-             "keep_batchnorm_fp32" : None,
-             "master_weights" : None,
-             "loss_scale" : 1.0,
-+            "combine_grad": None,
-+            "check_combined_tensors": None
-             # Reserved for future functionality
-             # "fused_optimizer" : False,
-             # "enable_ddp_interop" : False,
-@@ -91,6 +93,11 @@
-                         self.options[name] = value
-                     else:
-                         self.options[name] = float(value)
-+                elif name == "combine_grad" or name == "check_combined_tensors":
-+                    if self.opt_level not in ["O1", "O2"] and value:
-+                        warn_or_err("Currently, combine_grad=True or check_combined_tensors=True should only be set "
-+                                    "by selecting opt_level='O1' or opt_level='O2'.")
-+                    self.options[name] = value
-                 else:
-                     self.options[name] = value
-         else:
-@@ -161,6 +168,7 @@
-         properties.keep_batchnorm_fp32 = None
-         properties.master_weights = None
-         properties.loss_scale = "dynamic"
-+        properties.combine_grad = None
-         # properties.fused_optimizer = False
-         # properties.enable_ddp_interop = False
-         return properties # modified in place so this isn't really necessary
-@@ -205,8 +213,14 @@
-     cast_model_outputs=None,
-     num_losses=1,
-     verbosity=1,
-+    dynamic_init_scale=2.**16,
-+    scale_growth_factor=2.,
-+    scale_backoff_factor=0.5,
-+    scale_window=2000,
-     min_loss_scale=None,
--    max_loss_scale=2.**24
-+    max_loss_scale=2.**24,
-+    combine_grad=None,
-+    check_combined_tensors=None
-     ):
-     """
-     Initialize your models, optimizers, and the Torch tensor and functional namespace according to the
-@@ -254,11 +268,23 @@
-             support multiple losses/backward passes, but use a single global loss scale
-             for all of them.
-         verbosity (int, default=1):  Set to 0 to suppress Amp-related output.
-+        dynamic_init_scale (float, optional, default=2.**16):  Initial dynamic loss scale factor.
-+        scale_growth_factor (float, optional, default=2.0):  Factor by which the scale is multiplied
-+            if no overflow occurs for ``scale_window`` consecutive iterations.
-+            If dynamic loss scaling is not used, `scale_growth_factor` is ignored.
-+        scale_backoff_factor (float, optional, default=0.5):  Factor by which the scale is multiplied
-+            if overflow occurs in an iteration. If dynamic loss scaling is not used, `scale_backoff_factor` is ignored.
-+        scale_window (int, optional, default=2000):  Number of consecutive iterations without overflow
-+            that must occur for the scale to be multiplied by ``scale_growth_factor``.
-+            If dynamic loss scaling is not used, `scale_window` is ignored.
-         min_loss_scale (float, default=None):  Sets a floor for the loss scale values that can be chosen by dynamic
-             loss scaling.  The default value of None means that no floor is imposed.
-             If dynamic loss scaling is not used, `min_loss_scale` is ignored.
-         max_loss_scale (float, default=2.**24):  Sets a ceiling for the loss scale values that can be chosen by
-             dynamic loss scaling.  If dynamic loss scaling is not used, `max_loss_scale` is ignored.
-+        combine_grad (bool, optional, default=None): If True, make gradients fused for unscale.
-+        check_combined_tensors (bool, optional, default=None): If True, check if the combined grads and combined params
-+            are valid during training
- 
-     Returns:
-         Model(s) and optimizer(s) modified according to the ``opt_level``.
-@@ -306,6 +332,7 @@
-         https://github.com/NVIDIA/apex/issues
-     """
-     _amp_state.opt_properties = Properties()
-+    # Here add a switch to open combine tensor
-     _amp_state.verbosity = verbosity
- 
-     if not enabled:
-@@ -330,6 +357,10 @@
-         for k, v in _amp_state.opt_properties.options.items():
-             maybe_print("{:22} : {}".format(k, v), True)
- 
-+    _amp_state.dynamic_init_scale = dynamic_init_scale
-+    _amp_state.scale_growth_factor = scale_growth_factor
-+    _amp_state.scale_backoff_factor = scale_backoff_factor
-+    _amp_state.scale_window = scale_window
-     _amp_state.min_loss_scale = min_loss_scale
-     _amp_state.max_loss_scale = max_loss_scale
- 
-@@ -350,6 +381,10 @@
-         _amp_state.opt_properties.master_weights = master_weights
-     if loss_scale is not None:
-         _amp_state.opt_properties.loss_scale = loss_scale
-+    if combine_grad is not None:
-+        _amp_state.opt_properties.combine_grad = combine_grad
-+    if check_combined_tensors is not None:
-+        _amp_state.opt_properties.check_combined_tensors = check_combined_tensors
- 
-     maybe_print("After processing overrides, optimization options are:", True)
-     for k, v in _amp_state.opt_properties.options.items():
-diff -Nur '--exclude=.git' apex/apex/amp/handle.py apex-develop/apex/amp/handle.py
---- apex/apex/amp/handle.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/handle.py	2021-09-16 07:29:19.605887765 +0000
-@@ -1,3 +1,19 @@
-+# Copyright (c) 2020, Huawei Technologies.
-+# Copyright (c) 2019, NVIDIA CORPORATION.
-+# All rights reserved.
-+#
-+# Licensed under the BSD 3-Clause License  (the "License");
-+# you may not use this file except in compliance with the License.
-+# You may obtain a copy of the License at
-+#
-+# https://opensource.org/licenses/BSD-3-Clause
-+#
-+# Unless required by applicable law or agreed to in writing, software
-+# distributed under the License is distributed on an "AS IS" BASIS,
-+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-+# See the License for the specific language governing permissions and
-+# limitations under the License.
-+
- import contextlib
- import warnings
- import sys
-@@ -110,6 +126,9 @@
-                 if not optimizer._amp_stash.params_have_scaled_gradients:
-                     optimizer._prepare_amp_backward()
- 
-+    if loss_scaler.dynamic:
-+        LossScaler.clear_npu_overflow_flag()
-+
-     yield (loss.float())*loss_scale
- 
-     if delay_unscale:
-@@ -142,8 +161,12 @@
-                                 # Maybe skip should delegate to a method owned by the optimizers themselves.
-                                 if hasattr(opt._amp_stash, "all_fp32_from_fp16_params"):
-                                     # Clear the master grads that wouldn't be zeroed by model.zero_grad()
--                                    for param in opt._amp_stash.all_fp32_from_fp16_params:
--                                        param.grad = None
-+                                    if opt.accelerate or opt.is_npu_fused_optimizer:
-+                                        if opt._amp_stash.main_fp32_from_fp16_grad_combine is not None:
-+                                            opt._amp_stash.main_fp32_from_fp16_grad_combine.zero_()
-+                                    else:
-+                                        for param in opt._amp_stash.all_fp32_from_fp16_params:
-+                                            param.grad = None
-                                 if hasattr(opt, "most_recent_scale"):
-                                     opt.most_recent_scale = 1.0
-                                     opt.scale_set_by_backward = False
 diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.py
---- apex/apex/amp/scaler.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/scaler.py	2022-02-08 08:14:28.996710550 +0000
+--- apex/apex/amp/scaler.py	2022-03-02 09:38:05.237834906 +0800
++++ apex-develop/apex/amp/scaler.py	2022-03-01 11:59:37.597049607 +0800
 @@ -1,7 +1,25 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -1818,8 +1984,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
  
          return should_skip
 diff -Nur '--exclude=.git' apex/apex/amp/utils.py apex-develop/apex/amp/utils.py
---- apex/apex/amp/utils.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/utils.py	2021-09-16 07:29:19.605887765 +0000
+--- apex/apex/amp/utils.py	2022-03-02 09:38:05.237834906 +0800
++++ apex-develop/apex/amp/utils.py	2022-03-01 11:59:37.597049607 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -1868,8 +2034,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/utils.py apex-develop/apex/amp/utils.py
                                     "cache[x]'s parent.  This is likely an error.")
          # During eval, it's possible to end up caching casted weights with
 diff -Nur '--exclude=.git' apex/apex/amp/wrap.py apex-develop/apex/amp/wrap.py
---- apex/apex/amp/wrap.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/amp/wrap.py	2021-10-25 04:00:50.855084380 +0000
+--- apex/apex/amp/wrap.py	2022-03-02 09:38:05.237834906 +0800
++++ apex-develop/apex/amp/wrap.py	2022-03-01 11:59:37.597049607 +0800
 @@ -249,7 +249,7 @@
  
          new_args = []
@@ -1880,8 +2046,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/wrap.py apex-develop/apex/amp/wrap.py
                  fp16_weight_buf = args[0].new_empty((num_params,),
                                                      dtype=torch.half)
 diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-develop/apex/optimizers/__init__.py
---- apex/apex/optimizers/__init__.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/apex/optimizers/__init__.py	2021-11-06 03:43:48.950426136 +0000
+--- apex/apex/optimizers/__init__.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/apex/optimizers/__init__.py	2022-03-01 11:59:37.605049756 +0800
 @@ -2,4 +2,14 @@
  from .fused_adam import FusedAdam
  from .fused_novograd import FusedNovoGrad
@@ -1899,9 +2065,27 @@ diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-develop/apex/op
 +from .npu_fused_adamp import NpuFusedAdamP
 +from .npu_fused_rmsprop import NpuFusedRMSprop
 +from .npu_fused_rmsprop_tf import NpuFusedRMSpropTF
+diff -Nur '--exclude=.git' apex/.gitignore apex-develop/.gitignore
+--- apex/.gitignore	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/.gitignore	1970-01-01 08:00:00.000000000 +0800
+@@ -1,5 +0,0 @@
+-apex.egg-info
+-dist
+-build
+-docs/build
+-*~
+\ No newline at end of file
+diff -Nur '--exclude=.git' apex/.gitmodules apex-develop/.gitmodules
+--- apex/.gitmodules	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/.gitmodules	1970-01-01 08:00:00.000000000 +0800
+@@ -1,4 +0,0 @@
+-[submodule "apex/contrib/csrc/multihead_attn/cutlass"]
+-	path = apex/contrib/csrc/multihead_attn/cutlass
+-	url = https://github.com/NVIDIA/cutlass.git
+-	branch = v1.2.0
 diff -Nur '--exclude=.git' apex/setup.py apex-develop/setup.py
---- apex/setup.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/setup.py	2021-08-04 09:35:25.072666996 +0000
+--- apex/setup.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/setup.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2003,8 +2187,8 @@ diff -Nur '--exclude=.git' apex/setup.py apex-develop/setup.py
                                      'csrc',
                                      'include',
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_add_param_group.py apex-develop/tests/L0/run_amp/test_add_param_group.py
---- apex/tests/L0/run_amp/test_add_param_group.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L0/run_amp/test_add_param_group.py	2021-08-04 09:35:25.072666996 +0000
+--- apex/tests/L0/run_amp/test_add_param_group.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/tests/L0/run_amp/test_add_param_group.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2093,8 +2277,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_add_param_group.py apex-de
                                        opt_level, how_to_zero, zero_before_add))
  
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_basic_casts.py apex-develop/tests/L0/run_amp/test_basic_casts.py
---- apex/tests/L0/run_amp/test_basic_casts.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L0/run_amp/test_basic_casts.py	2021-08-04 09:35:25.072666996 +0000
+--- apex/tests/L0/run_amp/test_basic_casts.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/tests/L0/run_amp/test_basic_casts.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2295,8 +2479,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_basic_casts.py apex-develo
      # TODO: maybe more tests on disabled casting?
  
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_cache.py apex-develop/tests/L0/run_amp/test_cache.py
---- apex/tests/L0/run_amp/test_cache.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L0/run_amp/test_cache.py	2021-08-04 09:35:25.072666996 +0000
+--- apex/tests/L0/run_amp/test_cache.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/tests/L0/run_amp/test_cache.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2430,8 +2614,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_cache.py apex-develop/test
  
  if __name__ == '__main__':
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_checkpointing.py apex-develop/tests/L0/run_amp/test_checkpointing.py
---- apex/tests/L0/run_amp/test_checkpointing.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L0/run_amp/test_checkpointing.py	2021-08-04 09:35:25.076666991 +0000
+--- apex/tests/L0/run_amp/test_checkpointing.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/tests/L0/run_amp/test_checkpointing.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2473,8 +2657,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_checkpointing.py apex-deve
  
      def train_step(self, model, optimizer, data, loss_ids):
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_larc.py apex-develop/tests/L0/run_amp/test_larc.py
---- apex/tests/L0/run_amp/test_larc.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L0/run_amp/test_larc.py	2021-08-04 09:35:25.076666991 +0000
+--- apex/tests/L0/run_amp/test_larc.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/tests/L0/run_amp/test_larc.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,5 +1,5 @@
  import unittest
 -
@@ -2517,8 +2701,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_larc.py apex-develop/tests
  
              optimizer.zero_grad()
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_promotion.py apex-develop/tests/L0/run_amp/test_promotion.py
---- apex/tests/L0/run_amp/test_promotion.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L0/run_amp/test_promotion.py	2021-08-04 09:35:25.076666991 +0000
+--- apex/tests/L0/run_amp/test_promotion.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/tests/L0/run_amp/test_promotion.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2615,8 +2799,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_promotion.py apex-develop/
              xs.exp_()
  
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_rnn.py apex-develop/tests/L0/run_amp/test_rnn.py
---- apex/tests/L0/run_amp/test_rnn.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L0/run_amp/test_rnn.py	2021-08-04 09:35:25.076666991 +0000
+--- apex/tests/L0/run_amp/test_rnn.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/tests/L0/run_amp/test_rnn.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2675,8 +2859,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_rnn.py apex-develop/tests/
              self.assertEqual(x.grad.dtype, x.dtype)
  
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/utils.py apex-develop/tests/L0/run_amp/utils.py
---- apex/tests/L0/run_amp/utils.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L0/run_amp/utils.py	2021-08-04 09:35:25.076666991 +0000
+--- apex/tests/L0/run_amp/utils.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/tests/L0/run_amp/utils.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,7 +1,28 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2740,8 +2924,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/utils.py apex-develop/tests/L0/
 +    return npu_input1
 \ No newline at end of file
 diff -Nur '--exclude=.git' apex/tests/L0/run_test.py apex-develop/tests/L0/run_test.py
---- apex/tests/L0/run_test.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L0/run_test.py	2021-08-04 09:35:25.076666991 +0000
+--- apex/tests/L0/run_test.py	2022-03-02 09:38:05.241834935 +0800
++++ apex-develop/tests/L0/run_test.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,20 +1,71 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2824,8 +3008,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_test.py apex-develop/tests/L0/run_t
 -sys.exit(errcode)
 +    sys.exit(errcode)
 diff -Nur '--exclude=.git' apex/tests/L1/common/main_amp.py apex-develop/tests/L1/common/main_amp.py
---- apex/tests/L1/common/main_amp.py	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L1/common/main_amp.py	2021-08-25 08:44:48.022510227 +0000
+--- apex/tests/L1/common/main_amp.py	2022-03-02 09:38:05.245834964 +0800
++++ apex-develop/tests/L1/common/main_amp.py	2022-03-01 11:59:37.613049905 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3107,8 +3291,8 @@ diff -Nur '--exclude=.git' apex/tests/L1/common/main_amp.py apex-develop/tests/L
            .format(top1=top1, top5=top5))
  
 diff -Nur '--exclude=.git' apex/tests/L1/cross_product/run.sh apex-develop/tests/L1/cross_product/run.sh
---- apex/tests/L1/cross_product/run.sh	2021-04-12 04:03:22.000000000 +0000
-+++ apex-develop/tests/L1/cross_product/run.sh	2021-08-04 09:35:25.076666991 +0000
+--- apex/tests/L1/cross_product/run.sh	2022-03-02 09:38:05.245834964 +0800
++++ apex-develop/tests/L1/cross_product/run.sh	2022-03-01 11:59:37.613049905 +0800
 @@ -3,4 +3,5 @@
  # DATADIR="/home/mcarilli/Desktop/pt18data/apex_stale/examples/imagenet/bare_metal_train_val/"
  # DATADIR="/opt/home/apex/examples/imagenet/"
