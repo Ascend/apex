@@ -2806,7 +2806,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_add_param_group.py apex-de
  
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_basic_casts.py apex-develop/tests/L0/run_amp/test_basic_casts.py
 --- apex/tests/L0/run_amp/test_basic_casts.py	2022-03-09 17:27:27.402309608 +0800
-+++ apex-develop/tests/L0/run_amp/test_basic_casts.py	2022-03-09 16:26:49.972515005 +0800
++++ apex-develop/tests/L0/run_amp/test_basic_casts.py	2022-05-10 20:37:10.692000000 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2857,8 +2857,9 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_basic_casts.py apex-develo
          y = fn(x)
          test_case.assertEqual(y.type(), expected[typ])
          if test_backward:
-             y.float().sum().backward()
+-            y.float().sum().backward()
 -            test_case.assertEqual(x.grad.type(), MATCH_INPUT[typ])
++            y.float().sum().backward(retain_graph=True)
 +            test_case.assertEqual(npu_input_grad.type().split(".")[-1], utils.MATCH_INPUT[typ].split(".")[-1])
  
  class TestBasicCasts(unittest.TestCase):
