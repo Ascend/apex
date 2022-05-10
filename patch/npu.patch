@@ -2221,8 +2221,8 @@ diff -Nur '--exclude=.git' apex/.gitmodules apex-develop/.gitmodules
 -	branch = v1.2.0
 diff -Nur '--exclude=.git' apex/setup.py apex-develop/setup.py
 --- apex/setup.py	2022-03-09 17:27:27.402309608 +0800
-+++ apex-develop/setup.py	2022-05-10 15:38:18.768000000 +0800
-@@ -1,55 +1,86 @@
++++ apex-develop/setup.py	2022-05-10 19:49:22.680000000 +0800
+@@ -1,55 +1,88 @@
 -import torch
 -from torch.utils import cpp_extension
 -from setuptools import setup, find_packages
@@ -2321,12 +2321,14 @@ diff -Nur '--exclude=.git' apex/setup.py apex-develop/setup.py
 +
 +    temp_library_dirs = kwargs.get('library_dirs', [])
 +    temp_library_dirs.append(os.path.join(package_dir, 'torch/lib'))
++    temp_library_dirs.append(os.path.join(package_dir, 'torch_npu/lib'))
 +    temp_library_dirs.append(os.path.join(this_dir, "third_party/acl/libs"))
 +    kwargs['library_dirs'] = temp_library_dirs
 +
 +    libraries = kwargs.get('libraries', [])
 +    libraries.append('c10')
 +    libraries.append('torch')
++    libraries.append('torch_npu')
 +    libraries.append('torch_cpu')
 +    libraries.append('torch_python')
 +    kwargs['libraries'] = libraries
@@ -2349,7 +2351,7 @@ diff -Nur '--exclude=.git' apex/setup.py apex-develop/setup.py
  if "--pyprof" in sys.argv:
      string = "\n\nPyprof has been moved to its own dedicated repository and will " + \
               "soon be removed from Apex.  Please visit\n" + \
-@@ -67,344 +98,55 @@
+@@ -67,344 +100,55 @@
      warnings.warn("Option --pyprof not specified. Not installing PyProf dependencies!")
  
  if "--cpp_ext" in sys.argv or "--cuda_ext" in sys.argv:
@@ -3451,8 +3453,8 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/utils.py apex-develop/tests/L0/
 \ No newline at end of file
 diff -Nur '--exclude=.git' apex/tests/L0/run_test.py apex-develop/tests/L0/run_test.py
 --- apex/tests/L0/run_test.py	2022-03-09 17:27:27.402309608 +0800
-+++ apex-develop/tests/L0/run_test.py	2022-03-09 16:26:49.976514999 +0800
-@@ -1,20 +1,71 @@
++++ apex-develop/tests/L0/run_test.py	2022-05-10 19:49:22.680000000 +0800
+@@ -1,20 +1,72 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
 +# All rights reserved.
@@ -3475,6 +3477,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_test.py apex-develop/tests/L0/run_t
 -test_dirs = ["run_amp", "run_fp16util", "run_optimizers", "run_fused_layer_norm", "run_pyprof_nvtx", "run_pyprof_data", "run_mlp"]
 +import device
 +import torch
++import torch_npu
 +import argparse
  
  runner = unittest.TextTestRunner(verbosity=2)
