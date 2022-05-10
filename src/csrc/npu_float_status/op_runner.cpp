@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020, Huawei Technologies.All rights reserved.
- * 
+ *
  * Licensed under the BSD 3-Clause License  (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -18,7 +18,7 @@
 #include <limits>
 #include "common.h"
 #include <torch/extension.h>
-#include <c10/npu/NPUEvent.h>
+#include <torch_npu/csrc/core/npu/NPUEvent.h>
 
 using namespace std;
 
@@ -148,7 +148,7 @@ size_t OpRunner::GetOutputSize(size_t index)
 
 int OpRunner::RunOp()
 {
-    auto stream = at::npu::getCurrentNPUStream();
+    auto stream = c10_npu::getCurrentNPUStream();
     int holdGIL = PyGILState_Check();
     aclError ret = ACL_ERROR_NONE;
 
