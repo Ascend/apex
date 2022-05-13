@@ -13,12 +13,13 @@
 # limitations under the License.
 
 import torch
+import torch_npu
 from change_data_ptr import change_data_ptr
 
 def combine_npu(list_of_tensor, require_copy_value = True):
     total_numel = 0
     for tensor in list_of_tensor:
-        total_numel += tensor.storage().size()
+        total_numel += torch_npu.get_storage_size(tensor)
 
     if total_numel == 0:
         return None
@@ -32,20 +33,20 @@ def combine_npu(list_of_tensor, require_copy_value = True):
             temp = tensor.clone()
             change_data_ptr(tensor, combined_tensor, idx)
             tensor.copy_(temp)
-            idx += tensor.storage().size()
+            idx += torch_npu.get_storage_size(tensor)
     else:
         for tensor in list_of_tensor:
             change_data_ptr(tensor, combined_tensor, idx)
-            idx += tensor.storage().size()
+            idx += torch_npu.get_storage_size(tensor)
     return combined_tensor
 
 def get_part_combined_tensor(combined_tensor, index, size):
     if combined_tensor is None or size == 0:
         return None
     
-    if (index + size) > combined_tensor.storage().size():
-        raise RuntimeError("(index + size) ({}) > combined_tensor.storage().size() ({})".format(
-                           index + size, combined_tensor.storage().size()))
+    if (index + size) > torch_npu.get_storage_size(combined_tensor):
+        raise RuntimeError("(index + size) ({}) > torch_npu.get_storage_size(combined_tensor) ({})".format(
+                           index + size, torch_npu.get_storage_size(combined_tensor)))
 
     part_tensor = torch.zeros(size, dtype=combined_tensor.dtype).npu()
     change_data_ptr(part_tensor, combined_tensor, index)
@@ -59,7 +60,7 @@ def is_combined_tensor_valid(combined_tensor, list_of_tensor):
 
     combined_tensor_start_addr = combined_tensor.data_ptr()
     combined_tensor_end_addr = combined_tensor_start_addr + \
-                               combined_tensor.storage().size() * combined_tensor.element_size()
+                               torch_npu.get_storage_size(combined_tensor) * combined_tensor.element_size()
     
     for tensor in list_of_tensor:
         if tensor is None or \
