@@ -18,6 +18,7 @@ import functools as ft
 import itertools as it
 import sys
 import torch
+import torch_npu
 from apex import amp
 from apex.contrib.combine_tensors import combine_npu
 
@@ -55,12 +56,17 @@ class TestCombineTensors(unittest.TestCase):
         print_tensor_phy_info(y_after_combine_des, y)
         print_tensor_phy_info(z_after_combine_des, z)
 
+        x_storage_size = torch_npu.get_storage_size(x)
+        y_storage_size = torch_npu.get_storage_size(y)
+        z_storage_size = torch_npu.get_storage_size(z)
+        combine_tensor_storage_size = torch_npu.get_storage_size(combine_tensor)
+
         # test if combine_tensor is contiguous, and x,y,z are will moved into the combine_tensor.
         self.assertEqual(True, combine_tensor.is_contiguous())
         self.assertEqual(combine_tensor.data_ptr(), x.data_ptr())
-        self.assertEqual(x.data_ptr() + x.storage().size() * x.element_size(), y.data_ptr())
-        self.assertEqual(y.data_ptr() + y.storage().size() * y.element_size(), z.data_ptr())
-        self.assertEqual(combine_tensor.storage().size(), x.storage().size() + y.storage().size() + z.storage().size())
+        self.assertEqual(x.data_ptr() + x_storage_size * x.element_size(), y.data_ptr())
+        self.assertEqual(y.data_ptr() + y_storage_size * y.element_size(), z.data_ptr())
+        self.assertEqual(combine_tensor_storage_size, x_storage_size + y_storage_size + z_storage_size)
 
     def test_basic_fp32(self):
         print('----------------------test basic functionality of fp32------------------------')
@@ -85,12 +91,17 @@ class TestCombineTensors(unittest.TestCase):
         print_tensor_phy_info(y_after_combine_des, y)
         print_tensor_phy_info(z_after_combine_des, z)
 
+        x_storage_size = torch_npu.get_storage_size(x)
+        y_storage_size = torch_npu.get_storage_size(y)
+        z_storage_size = torch_npu.get_storage_size(z)
+        combine_tensor_storage_size = torch_npu.get_storage_size(combine_tensor)
+
         # test for tensors with very large sizes.
         self.assertEqual(True, combine_tensor.is_contiguous())
         self.assertEqual(combine_tensor.data_ptr(), x.data_ptr())
-        self.assertEqual(x.data_ptr() + x.storage().size() * x.element_size(), y.data_ptr())
-        self.assertEqual(y.data_ptr() + y.storage().size() * y.element_size(), z.data_ptr())
-        self.assertEqual(combine_tensor.storage().size(), x.storage().size() + y.storage().size() + z.storage().size())
+        self.assertEqual(x.data_ptr() + x_storage_size * x.element_size(), y.data_ptr())
+        self.assertEqual(y.data_ptr() + y_storage_size * y.element_size(), z.data_ptr())
+        self.assertEqual(combine_tensor_storage_size, x_storage_size + y_storage_size + z_storage_size)
 
     def test_computation(self):
         print('----------------------test computation------------------------')
@@ -164,4 +175,5 @@ class TestCombineTensors(unittest.TestCase):
         self.assertNotEqual(store_x_after_combine, new_tensor.data_ptr())
 
 if __name__ == '__main__':
+    torch.npu.set_device("npu:0")
     unittest.main(argv=['test_combine_tensors.py'])
