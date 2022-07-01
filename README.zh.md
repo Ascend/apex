@@ -14,7 +14,13 @@
 
 注：以下描述中的“根目录”指“Ascend apex的根目录”
 
-**获取原生apex源代码**
+##### 获取昇腾适配的Ascend apex源码
+
+```
+git clone -b master https://gitee.com/ascend/apex.git
+```
+
+##### 获取原生apex源代码
 
 从github上获取源代码，在根目录下执行
 ```
@@ -27,7 +33,7 @@ git checkout 4ef930c1c884fdca5f472ab2ce7cb9b505d26c1a
 cd ..
 ```
 
-**生成适配昇腾AI处理器的apex代码**
+##### 生成适配昇腾AI处理器的apex代码
 
 进入到scripts目录，执行
 ```
@@ -35,7 +41,7 @@ bash gen.sh
 ```
 会在根目录下apex目录中生成npu适配全量代码
 
-**编译apex的二进制包**
+##### 编译apex的二进制包
 
 1、请确保npu版本的pytorch可以正常使用（否则会影响apex的编译）；
 
