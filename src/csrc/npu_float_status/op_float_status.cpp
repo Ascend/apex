@@ -62,7 +62,7 @@ bool RunGetFloatStatusOp()
         }
         if (FLOAT_STATUS_OVERFLOW == result[0]) {
             overflowFlag = true;
-            INFO_LOG("Float status is overflow!");
+            INFO_LOG("Float status is overflow.");
         }
     }
 
