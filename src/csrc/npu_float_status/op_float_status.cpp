@@ -92,7 +92,7 @@ at::Tensor TestFlatten(std::vector<at::Tensor> tensors)
   return torch::utils::flatten_dense_tensors(tensors);
 }
 
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+PYBIND11_MODULE(npu_float_status, m) {
     m.doc() = "float status op";
     m.def("RunGetFloatStatusOp", &RunGetFloatStatusOp, "Run get float status op");
     m.def("RunClearFloatStatusOp", &RunClearFloatStatusOp, "Run clear float status op");
