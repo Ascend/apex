@@ -32,6 +32,6 @@ void change_data_ptr(at::Tensor des, at::Tensor src, int offset)
   }
 }
 
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+PYBIND11_MODULE(change_data_ptr, m) {
   m.def("change_data_ptr", &change_data_ptr, "Change data ptr");
 }
