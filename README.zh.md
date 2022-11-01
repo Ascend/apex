@@ -22,7 +22,7 @@
 ##### 获取昇腾适配的Ascend apex源码
 
 ```
-git clone -b master https://gitee.com/ascend/apex.git
+git clone -b v1.8.1-3.0.rc3 https://gitee.com/ascend/apex.git
 ```
 
 ##### 获取原生apex源代码
