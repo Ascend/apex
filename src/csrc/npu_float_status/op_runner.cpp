@@ -187,12 +187,12 @@ int OpRunner::RunOp()
         return RUN_FAILED;
     }
 
-    if (aclrtSynchronizeStream(stream) != ACL_ERROR_NONE) {
-        ERROR_LOG("Synchronize stream failed");
-        return RUN_FAILED;
-    }
-
     if (opDesc_->opType == OP_TYPE_NPU_GET_FLOAT_STATUS) {
+        if (aclrtSynchronizeStream(stream) != ACL_ERROR_NONE) {
+            ERROR_LOG("Synchronize stream failed");
+            return RUN_FAILED;
+        }
+
         for (size_t i = 0; i < numInputs_; ++i) {
             auto size = GetInputSize(i);
             if (aclrtMemcpy(hostInputs_[i], size, devInputs_[i], size, ACL_MEMCPY_DEVICE_TO_HOST) != ACL_ERROR_NONE) {
