@@ -12,14 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+
 import torch
 import torch_npu
 from change_data_ptr import change_data_ptr
 
+
+def get_aligned_storage_size(tensor):
+    r"""
+    Returns 32-Byte-aligned storage size with extra 64 Byte padding.
+
+    Math:
+        ceil(x / 32B) * 32B + 64B
+    """
+    if tensor.dtype != torch.float32 and tensor.dtype != torch.float16:
+        raise RuntimeError("Fused optimizers only support weights and grads with dtype torch.float or torch.float16.")
+
+    align = 32
+    real_align = align // tensor.element_size()
+    numel = torch_npu.get_storage_size(tensor)
+
+    return math.ceil(numel / real_align) * real_align + 2 * real_align
+
+
 def combine_npu(list_of_tensor, require_copy_value = True):
+    list_of_numel = []
     total_numel = 0
     for tensor in list_of_tensor:
-        total_numel += torch_npu.get_storage_size(tensor)
+        aligned_storage_size = get_aligned_storage_size(tensor)
+        total_numel += aligned_storage_size
+        list_of_numel.append(aligned_storage_size)
 
     if total_numel == 0:
         return None
@@ -29,15 +52,15 @@ def combine_npu(list_of_tensor, require_copy_value = True):
 
     idx = 0
     if require_copy_value:
-        for tensor in list_of_tensor:
+        for i, tensor in enumerate(list_of_tensor):
             temp = tensor.clone()
             change_data_ptr(tensor, combined_tensor, idx)
             tensor.copy_(temp)
-            idx += torch_npu.get_storage_size(tensor)
+            idx += list_of_numel[i]
     else:
-        for tensor in list_of_tensor:
+        for i, tensor in enumerate(list_of_tensor):
             change_data_ptr(tensor, combined_tensor, idx)
-            idx += torch_npu.get_storage_size(tensor)
+            idx += list_of_numel[i]
     return combined_tensor
 
 def get_part_combined_tensor(combined_tensor, index, size):

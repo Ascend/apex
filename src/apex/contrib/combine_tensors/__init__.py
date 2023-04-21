@@ -12,4 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .combine_tensors import combine_npu, get_part_combined_tensor, is_combined_tensor_valid
+from .combine_tensors import (
+    combine_npu,
+    get_part_combined_tensor,
+    is_combined_tensor_valid,
+    get_aligned_storage_size
+)

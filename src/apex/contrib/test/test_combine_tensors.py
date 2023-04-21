@@ -20,7 +20,7 @@ import sys
 import torch
 import torch_npu
 from apex import amp
-from apex.contrib.combine_tensors import combine_npu
+from apex.contrib.combine_tensors import combine_npu, get_aligned_storage_size
 
 x_before_combine_des = 'x before combine: '
 y_before_combine_des = 'y before combine: '
@@ -37,6 +37,12 @@ class TestCombineTensors(unittest.TestCase):
 
     def setUp(self):
         self.device = 'npu'
+
+    def get_combine_mask(self, list_of_tensors):
+        list_of_tensors_mask = []
+        for tensor in list_of_tensors:
+            list_of_tensors_mask.append(torch.ones_like(tensor))
+        return combine_npu(list_of_tensors_mask)
 
     def basic_functionality(self, dtype = torch.float32):
         x = torch.zeros((2,2,2,2), device = self.device, dtype = dtype)
@@ -56,9 +62,9 @@ class TestCombineTensors(unittest.TestCase):
         print_tensor_phy_info(y_after_combine_des, y)
         print_tensor_phy_info(z_after_combine_des, z)
 
-        x_storage_size = torch_npu.get_storage_size(x)
-        y_storage_size = torch_npu.get_storage_size(y)
-        z_storage_size = torch_npu.get_storage_size(z)
+        x_storage_size = get_aligned_storage_size(x)
+        y_storage_size = get_aligned_storage_size(y)
+        z_storage_size = get_aligned_storage_size(z)
         combine_tensor_storage_size = torch_npu.get_storage_size(combine_tensor)
 
         # test if combine_tensor is contiguous, and x,y,z are will moved into the combine_tensor.
@@ -91,9 +97,9 @@ class TestCombineTensors(unittest.TestCase):
         print_tensor_phy_info(y_after_combine_des, y)
         print_tensor_phy_info(z_after_combine_des, z)
 
-        x_storage_size = torch_npu.get_storage_size(x)
-        y_storage_size = torch_npu.get_storage_size(y)
-        z_storage_size = torch_npu.get_storage_size(z)
+        x_storage_size = get_aligned_storage_size(x)
+        y_storage_size = get_aligned_storage_size(y)
+        z_storage_size = get_aligned_storage_size(z)
         combine_tensor_storage_size = torch_npu.get_storage_size(combine_tensor)
 
         # test for tensors with very large sizes.
@@ -116,6 +122,7 @@ class TestCombineTensors(unittest.TestCase):
         lst = [x, y, z]
 
         combine_tensor = combine_npu(lst)
+        combine_mask = self.get_combine_mask(lst)
 
         print()
         print_tensor_phy_info(combine_tensor_des, combine_tensor)
@@ -132,8 +139,8 @@ class TestCombineTensors(unittest.TestCase):
         for tensor in lst:
             tensor.mul_(2)
 
-        self.assertEqual(236, combine_tensor.sum())
-        self.assertEqual(combine_tensor.sum(), x.sum() + y.sum() + z.sum())
+        self.assertEqual(236, (combine_tensor * combine_mask).sum())
+        self.assertEqual((combine_tensor * combine_mask).sum(), x.sum() + y.sum() + z.sum())
 
     @unittest.skip("not stable test")
     def test_storage_reuse_and_memory_release(self):
