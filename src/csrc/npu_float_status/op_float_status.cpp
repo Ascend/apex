@@ -38,54 +38,6 @@ OperatorDesc CreateFloatStatusOpDesc(const std::string opType)
     return opDesc;
 }
 
-bool RunGetFloatStatusOp()
-{
-    OperatorDesc opDesc = CreateFloatStatusOpDesc(OP_TYPE_NPU_GET_FLOAT_STATUS);
-
-    OpRunner opRunner(&opDesc);
-    if (opRunner.Init() != RUN_SUCCESS) {
-        ERROR_LOG("Init OpRunner failed");
-        return false;
-    }
-
-    if (opRunner.RunOp() != RUN_SUCCESS) {
-        return false;
-    }
-
-    const float *result = nullptr;
-    bool overflowFlag = false;
-    for (size_t i = 0; i < opRunner.NumInputs(); ++i) {
-        result = opRunner.GetInputBuffer<const float>(i);
-        if (result == nullptr) {
-            ERROR_LOG("opRunner.GetInputBuffer failed");
-            return false;
-        }
-        if (FLOAT_STATUS_OVERFLOW == result[0]) {
-            overflowFlag = true;
-            INFO_LOG("Float status is overflow.");
-        }
-    }
-
-    return overflowFlag;
-}
-
-int RunClearFloatStatusOp()
-{
-    OperatorDesc opDesc = CreateFloatStatusOpDesc(OP_TYPE_NPU_CLEAR_FLOAT_STATUS);
-
-    OpRunner opRunner(&opDesc);
-    if (opRunner.Init() != RUN_SUCCESS) {
-        ERROR_LOG("Init OpRunner failed");
-        return RUN_FAILED;
-    }
-
-    if (opRunner.RunOp() != RUN_SUCCESS) {
-        return RUN_FAILED;
-    }
-
-    return RUN_SUCCESS;
-}
-
 /* This function is used for linking torch/acl .so files */
 at::Tensor TestFlatten(std::vector<at::Tensor> tensors)
 {
@@ -94,7 +46,5 @@ at::Tensor TestFlatten(std::vector<at::Tensor> tensors)
 
 PYBIND11_MODULE(npu_float_status, m) {
     m.doc() = "float status op";
-    m.def("RunGetFloatStatusOp", &RunGetFloatStatusOp, "Run get float status op");
-    m.def("RunClearFloatStatusOp", &RunClearFloatStatusOp, "Run clear float status op");
     m.def("TestFlatten", &TestFlatten, "Test flatten");
 }
