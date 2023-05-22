@@ -1,6 +1,6 @@
 diff -Nur '--exclude=.git' apex/apex/amp/amp.py apex-develop/apex/amp/amp.py
 --- apex/apex/amp/amp.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/amp/amp.py	2023-05-22 11:52:46.293876738 +0800
++++ apex-develop/apex/amp/amp.py	2023-05-22 21:08:44.712409087 +0800
 @@ -65,7 +65,14 @@
  
  
@@ -39,7 +39,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/amp.py apex-develop/apex/amp/amp.py
                               try_caching, verbose)
 diff -Nur '--exclude=.git' apex/apex/amp/_amp_state.py apex-develop/apex/amp/_amp_state.py
 --- apex/apex/amp/_amp_state.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/amp/_amp_state.py	2023-05-22 11:52:46.289876738 +0800
++++ apex-develop/apex/amp/_amp_state.py	2023-05-22 21:08:44.708409087 +0800
 @@ -8,10 +8,10 @@
  TORCH_MAJOR = int(torch.__version__.split('.')[0])
  TORCH_MINOR = int(torch.__version__.split('.')[1])
@@ -56,7 +56,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_amp_state.py apex-develop/apex/amp/_am
  class AmpState(object):
 diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/frontend.py
 --- apex/apex/amp/frontend.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/amp/frontend.py	2023-05-22 11:52:46.293876738 +0800
++++ apex-develop/apex/amp/frontend.py	2023-05-22 21:08:44.712409087 +0800
 @@ -19,6 +19,11 @@
              "keep_batchnorm_fp32" : None,
              "master_weights" : None,
@@ -188,7 +188,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/frontend.py apex-develop/apex/amp/front
      for k, v in _amp_state.opt_properties.options.items():
 diff -Nur '--exclude=.git' apex/apex/amp/handle.py apex-develop/apex/amp/handle.py
 --- apex/apex/amp/handle.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/amp/handle.py	2023-05-22 11:52:46.293876738 +0800
++++ apex-develop/apex/amp/handle.py	2023-05-22 21:08:44.712409087 +0800
 @@ -1,7 +1,24 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -251,7 +251,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/handle.py apex-develop/apex/amp/handle.
                                      opt.scale_set_by_backward = False
 diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_initialize.py
 --- apex/apex/amp/_initialize.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/amp/_initialize.py	2023-05-22 11:52:46.289876738 +0800
++++ apex-develop/apex/amp/_initialize.py	2023-05-22 21:08:44.708409087 +0800
 @@ -1,9 +1,25 @@
 -import torch
 -from torch._six import string_classes
@@ -379,7 +379,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_initialize.py apex-develop/apex/amp/_i
              return models, optimizers
 diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex/amp/_process_optimizer.py
 --- apex/apex/amp/_process_optimizer.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/amp/_process_optimizer.py	2023-05-22 11:52:46.293876738 +0800
++++ apex-develop/apex/amp/_process_optimizer.py	2023-05-22 21:08:44.712409087 +0800
 @@ -1,9 +1,89 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -441,8 +441,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +        for param in list_of_params:
 +            if param.requires_grad:
 +                grad_size = param.grad.size()
-+                grad_format = torch.get_npu_format(param)
-+                list_of_grad_mask.append(torch.npu_format_cast(torch.ones(grad_size).npu(), grad_format))
++                grad_format = torch_npu.get_npu_format(param)
++                list_of_grad_mask.append(torch_npu.npu_format_cast(torch.ones(grad_size).npu(), grad_format))
 +        grad_combined_tensor_mask = combine_npu(list_of_grad_mask)
 +        return grad_combined_tensor_mask
 +    else:
@@ -1106,8 +1106,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    all_fp32_from_fp32_params, all_fp32_from_fp32_grad_stash = [], []
 +    for param in stash.all_fp32_from_fp32_params:
 +        if param.grad is not None:
-+            if torch.get_npu_format(param) != torch.get_npu_format(param.grad):
-+                param.grad = torch.npu_format_cast(param.grad, torch.get_npu_format(param)).contiguous()
++            if torch_npu.get_npu_format(param) != torch_npu.get_npu_format(param.grad):
++                param.grad = torch_npu.npu_format_cast(param.grad, torch_npu.get_npu_format(param)).contiguous()
 +            all_fp32_from_fp32_params.append(param)
 +            all_fp32_from_fp32_grad_stash.append(torch.zeros_like(param.grad))
 +    stash.all_fp32_from_fp32_params = all_fp32_from_fp32_params
@@ -1120,9 +1120,9 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    all_fp16_params, all_fp32_from_fp16_params = [], []
 +    for fp16_param, fp32_from_fp16_param in zip(stash.all_fp16_params, stash.all_fp32_from_fp16_params):
 +        if fp16_param.grad is not None:
-+            if torch.get_npu_format(fp16_param.grad) != torch.get_npu_format(fp32_from_fp16_param):
-+                fp16_param.grad = torch.npu_format_cast(fp16_param.grad,
-+                                                        torch.get_npu_format(fp32_from_fp16_param)).contiguous()
++            if torch_npu.get_npu_format(fp16_param.grad) != torch_npu.get_npu_format(fp32_from_fp16_param):
++                fp16_param.grad = torch_npu.npu_format_cast(fp16_param.grad,
++                                                        torch_npu.get_npu_format(fp32_from_fp16_param)).contiguous()
 +            fp32_from_fp16_param.grad = torch.zeros_like(fp32_from_fp16_param)
 +            all_fp16_params.append(fp16_param)
 +            all_fp32_from_fp16_params.append(fp32_from_fp16_param)
@@ -1160,8 +1160,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    all_fp16_params, all_fp16_grad_stash = [], []
 +    for param in stash.all_fp16_params:
 +        if param.grad is not None:
-+            if torch.get_npu_format(param) != torch.get_npu_format(param.grad):
-+                param.grad = torch.npu_format_cast(param.grad, torch.get_npu_format(param)).contiguous()
++            if torch_npu.get_npu_format(param) != torch_npu.get_npu_format(param.grad):
++                param.grad = torch_npu.npu_format_cast(param.grad, torch_npu.get_npu_format(param)).contiguous()
 +            all_fp16_params.append(param)
 +            all_fp16_grad_stash.append(torch.zeros_like(param.grad))
 +
@@ -1171,8 +1171,8 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
 +    all_fp32_params, all_fp32_grad_stash = [], []
 +    for param in stash.all_fp32_params:
 +        if param.grad is not None:
-+            if torch.get_npu_format(param) != torch.get_npu_format(param.grad):
-+                param.grad = torch.npu_format_cast(param.grad, torch.get_npu_format(param)).contiguous()
++            if torch_npu.get_npu_format(param) != torch_npu.get_npu_format(param.grad):
++                param.grad = torch_npu.npu_format_cast(param.grad, torch_npu.get_npu_format(param)).contiguous()
 +            all_fp32_params.append(param)
 +            all_fp32_grad_stash.append(torch.zeros_like(param.grad))
 +
@@ -1865,7 +1865,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/_process_optimizer.py apex-develop/apex
                  else:
 diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.py
 --- apex/apex/amp/scaler.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/amp/scaler.py	2023-05-22 11:52:46.293876738 +0800
++++ apex-develop/apex/amp/scaler.py	2023-05-22 21:08:44.712409087 +0800
 @@ -1,7 +1,27 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2168,7 +2168,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/scaler.py apex-develop/apex/amp/scaler.
          return should_skip
 diff -Nur '--exclude=.git' apex/apex/amp/utils.py apex-develop/apex/amp/utils.py
 --- apex/apex/amp/utils.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/amp/utils.py	2023-05-22 11:52:46.293876738 +0800
++++ apex-develop/apex/amp/utils.py	2023-05-22 21:08:44.712409087 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2218,7 +2218,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/utils.py apex-develop/apex/amp/utils.py
          # During eval, it's possible to end up caching casted weights with
 diff -Nur '--exclude=.git' apex/apex/amp/wrap.py apex-develop/apex/amp/wrap.py
 --- apex/apex/amp/wrap.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/amp/wrap.py	2023-05-22 11:52:46.293876738 +0800
++++ apex-develop/apex/amp/wrap.py	2023-05-22 21:08:44.712409087 +0800
 @@ -249,7 +249,7 @@
  
          new_args = []
@@ -2230,7 +2230,7 @@ diff -Nur '--exclude=.git' apex/apex/amp/wrap.py apex-develop/apex/amp/wrap.py
                                                      dtype=torch.half)
 diff -Nur '--exclude=.git' apex/apex/fp16_utils/fp16util.py apex-develop/apex/fp16_utils/fp16util.py
 --- apex/apex/fp16_utils/fp16util.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/fp16_utils/fp16util.py	2023-05-22 11:52:46.305876737 +0800
++++ apex-develop/apex/fp16_utils/fp16util.py	2023-05-22 21:08:44.724409086 +0800
 @@ -2,7 +2,8 @@
  import torch.nn as nn
  from torch.autograd import Variable
@@ -2263,7 +2263,7 @@ diff -Nur '--exclude=.git' apex/apex/fp16_utils/fp16util.py apex-develop/apex/fp
          if isinstance(module, torch.nn.RNNBase) or isinstance(module, torch.nn.modules.rnn.RNNBase):
 diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-develop/apex/optimizers/__init__.py
 --- apex/apex/optimizers/__init__.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/apex/optimizers/__init__.py	2023-05-22 11:52:46.305876737 +0800
++++ apex-develop/apex/optimizers/__init__.py	2023-05-22 21:08:44.724409086 +0800
 @@ -2,4 +2,14 @@
  from .fused_adam import FusedAdam
  from .fused_novograd import FusedNovoGrad
@@ -2283,7 +2283,7 @@ diff -Nur '--exclude=.git' apex/apex/optimizers/__init__.py apex-develop/apex/op
 +from .npu_fused_rmsprop_tf import NpuFusedRMSpropTF
 diff -Nur '--exclude=.git' apex/csrc/flatten_unflatten.cpp apex-develop/csrc/flatten_unflatten.cpp
 --- apex/csrc/flatten_unflatten.cpp	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/csrc/flatten_unflatten.cpp	2023-05-22 11:52:46.309876737 +0800
++++ apex-develop/csrc/flatten_unflatten.cpp	2023-05-22 21:08:44.728409086 +0800
 @@ -1,3 +1,18 @@
 +/*
 + * Copyright (c) 2020, Huawei Technologies.All rights reserved.
@@ -2332,7 +2332,7 @@ diff -Nur '--exclude=.git' apex/.gitmodules apex-develop/.gitmodules
 -	branch = v1.2.0
 diff -Nur '--exclude=.git' apex/setup.py apex-develop/setup.py
 --- apex/setup.py	2023-04-06 10:36:26.964937605 +0800
-+++ apex-develop/setup.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/setup.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,55 +1,96 @@
 -import torch
 -from torch.utils import cpp_extension
@@ -2833,7 +2833,7 @@ diff -Nur '--exclude=.git' apex/setup.py apex-develop/setup.py
                                      'include',
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_add_param_group.py apex-develop/tests/L0/run_amp/test_add_param_group.py
 --- apex/tests/L0/run_amp/test_add_param_group.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L0/run_amp/test_add_param_group.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/tests/L0/run_amp/test_add_param_group.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -2923,7 +2923,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_add_param_group.py apex-de
  
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_basic_casts.py apex-develop/tests/L0/run_amp/test_basic_casts.py
 --- apex/tests/L0/run_amp/test_basic_casts.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L0/run_amp/test_basic_casts.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/tests/L0/run_amp/test_basic_casts.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3126,7 +3126,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_basic_casts.py apex-develo
  
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_cache.py apex-develop/tests/L0/run_amp/test_cache.py
 --- apex/tests/L0/run_amp/test_cache.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L0/run_amp/test_cache.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/tests/L0/run_amp/test_cache.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3261,7 +3261,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_cache.py apex-develop/test
  if __name__ == '__main__':
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_checkpointing.py apex-develop/tests/L0/run_amp/test_checkpointing.py
 --- apex/tests/L0/run_amp/test_checkpointing.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L0/run_amp/test_checkpointing.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/tests/L0/run_amp/test_checkpointing.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3304,7 +3304,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_checkpointing.py apex-deve
      def train_step(self, model, optimizer, data, loss_ids):
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_larc.py apex-develop/tests/L0/run_amp/test_larc.py
 --- apex/tests/L0/run_amp/test_larc.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L0/run_amp/test_larc.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/tests/L0/run_amp/test_larc.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,5 +1,5 @@
  import unittest
 -
@@ -3348,7 +3348,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_larc.py apex-develop/tests
              optimizer.zero_grad()
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_promotion.py apex-develop/tests/L0/run_amp/test_promotion.py
 --- apex/tests/L0/run_amp/test_promotion.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L0/run_amp/test_promotion.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/tests/L0/run_amp/test_promotion.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3446,7 +3446,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_promotion.py apex-develop/
  
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_rnn.py apex-develop/tests/L0/run_amp/test_rnn.py
 --- apex/tests/L0/run_amp/test_rnn.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L0/run_amp/test_rnn.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/tests/L0/run_amp/test_rnn.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3506,7 +3506,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/test_rnn.py apex-develop/tests/
  
 diff -Nur '--exclude=.git' apex/tests/L0/run_amp/utils.py apex-develop/tests/L0/run_amp/utils.py
 --- apex/tests/L0/run_amp/utils.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L0/run_amp/utils.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/tests/L0/run_amp/utils.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,7 +1,28 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3571,7 +3571,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_amp/utils.py apex-develop/tests/L0/
 \ No newline at end of file
 diff -Nur '--exclude=.git' apex/tests/L0/run_test.py apex-develop/tests/L0/run_test.py
 --- apex/tests/L0/run_test.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L0/run_test.py	2023-05-22 11:52:46.313876737 +0800
++++ apex-develop/tests/L0/run_test.py	2023-05-22 21:08:44.732409086 +0800
 @@ -1,20 +1,72 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3656,7 +3656,7 @@ diff -Nur '--exclude=.git' apex/tests/L0/run_test.py apex-develop/tests/L0/run_t
 +    sys.exit(errcode)
 diff -Nur '--exclude=.git' apex/tests/L1/common/main_amp.py apex-develop/tests/L1/common/main_amp.py
 --- apex/tests/L1/common/main_amp.py	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L1/common/main_amp.py	2023-05-22 11:52:46.317876737 +0800
++++ apex-develop/tests/L1/common/main_amp.py	2023-05-22 21:08:44.736409086 +0800
 @@ -1,3 +1,19 @@
 +# Copyright (c) 2020, Huawei Technologies.
 +# Copyright (c) 2019, NVIDIA CORPORATION.
@@ -3939,7 +3939,7 @@ diff -Nur '--exclude=.git' apex/tests/L1/common/main_amp.py apex-develop/tests/L
  
 diff -Nur '--exclude=.git' apex/tests/L1/cross_product/run.sh apex-develop/tests/L1/cross_product/run.sh
 --- apex/tests/L1/cross_product/run.sh	2023-04-06 10:36:26.968937605 +0800
-+++ apex-develop/tests/L1/cross_product/run.sh	2023-05-22 11:52:46.317876737 +0800
++++ apex-develop/tests/L1/cross_product/run.sh	2023-05-22 21:08:44.736409086 +0800
 @@ -3,4 +3,5 @@
  # DATADIR="/home/mcarilli/Desktop/pt18data/apex_stale/examples/imagenet/bare_metal_train_val/"
  # DATADIR="/opt/home/apex/examples/imagenet/"
