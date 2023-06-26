@@ -19,14 +19,14 @@ import torch_npu
 from change_data_ptr import change_data_ptr
 
 
-def get_aligned_storage_size(tensor, align=16, pad=16):
+def get_aligned_storage_size(tensor, align=16, pad=32):
     r"""
     Default:
         Returns 16-numel-aligned storage size with extra 16-numel padding.
-        For tensors with dtype torch.float the padding is 64 Bytes, while 32 Bytes for torch.float16.
+        For tensors with dtype torch.float the padding is 128 Bytes, while 64 Bytes for torch.float16.
 
     Math:
-        ceil(numel / 16) * 16 + 16
+        ceil(numel / 16) * 16 + 32
     """
     if tensor.dtype != torch.float32 and tensor.dtype != torch.float16:
         raise RuntimeError("Fused optimizers only support weights and grads with dtype torch.float or torch.float16.")
