@@ -27,7 +27,7 @@ class NpuFusedAdamW(Optimizer):
     """Implements AdamW algorithm.
 
     Currently NPU-only.  Requires Apex to be installed via
-    ``pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--npu_float_status" ./``.
+    ``pip install -v --no-cache-dir --global-option="--cpp_ext" ./``.
 
     This version of NPU fused AdamW implements 1 fusions.
 

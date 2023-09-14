@@ -24,7 +24,7 @@ from ..contrib.combine_tensors import combine_npu
 class NpuFusedAdadelta(Optimizer):
     """Implements NpuFusedAdadelta algorithm.
     Currently NPU-only.  Requires Apex to be installed via
-    ``pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--npu_float_status" ./``.
+    ``pip install -v --no-cache-dir --global-option="--cpp_ext" ./``.
 
     This version of fused ADADELTA implements 1 fusions.
 

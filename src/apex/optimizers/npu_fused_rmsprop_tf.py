@@ -28,7 +28,7 @@ class NpuFusedRMSpropTF(Optimizer):
     """Implements NpuFusedRMSpropTF algorithm.
 
     Currently NPU-only.  Requires Apex to be installed via
-    ``pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--npu_float_status" ./``.
+    ``pip install -v --no-cache-dir --global-option="--cpp_ext" ./``.
 
     Originally cut & paste from PyTorch RMSProp
     https://github.com/pytorch/pytorch/blob/063946d2b3f3f1e953a2a3b54e0b34f1393de295/torch/optim/rmsprop.py

@@ -30,7 +30,7 @@ class NpuFusedSGD(Optimizer):
     r"""Implements stochastic gradient descent (optionally with momentum).
 
     Currently NPU-only.  Requires Apex to be installed via
-    ``pip install -v --no-cache-dir --global-option="--cpp_ext" --global-option="--npu_float_status" ./``.
+    ``pip install -v --no-cache-dir --global-option="--cpp_ext" ./``.
 
     This version of fused SGD implements 1 fusions.
 
