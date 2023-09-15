@@ -18,7 +18,7 @@
 CUR_DIR=$(dirname $(readlink -f $0))
 ROOT_DIR=$CUR_DIR/..
 APEX_DIR=$ROOT_DIR/apex
-SUPPORTED_PY_VERSION=(3.7 3.8 3.9)
+SUPPORTED_PY_VERSION=(3.7 3.8 3.9 3.10)
 PY_VERSION='3.7'                     # Default supported python version is 3.8
 DEFAULT_SCRIPT_ARGS_NUM=1            # Default supported input parameters
 
@@ -114,7 +114,7 @@ function main()
 
     # compile
     cd $APEX_DIR || exit
-    python"${PY_VERSION}" setup.py --cpp_ext --npu_float_status bdist_wheel
+    python"${PY_VERSION}" setup.py --cpp_ext bdist_wheel
 }
 
 set -e

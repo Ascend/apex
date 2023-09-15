@@ -22,52 +22,32 @@
 
 ## 生成全量代码及编译
 
-注：以下描述中的“根目录”指“Ascend apex的根目录”
-
 ##### 获取昇腾适配的Ascend apex源码
 
 ```
 git clone -b master https://gitee.com/ascend/apex.git
+cd apex/
 ```
 
-##### 获取原生apex源代码
-
-从github上获取源代码，在根目录下执行
-```
-git clone https://github.com/NVIDIA/apex.git
-```
-进入源代码目录，切换至commitid为4ef930c1c884fdca5f472ab2ce7cb9b505d26c1a的分支
-```
-cd apex
-git checkout 4ef930c1c884fdca5f472ab2ce7cb9b505d26c1a
-cd ..
-```
-
-##### 生成适配昇腾AI处理器的apex代码
-
-进入到scripts目录，执行
-```
-bash gen.sh
-```
-会在根目录下apex目录中生成npu适配全量代码
 
 ##### 编译apex的二进制包
 
-1、请确保npu版本的pytorch可以正常使用（否则会影响apex的编译）；
+1、请确保torch已安装，setuptools版本小于等于65.7.0（不满足时执行pip install setuptools==41.2.0）
 
-2、进入到根目录下apex目录，执行
+2、执行（支持python3.7-3.10，确保python3.x命令存在）
 ```
-python3 setup.py --cpp_ext --npu_float_status bdist_wheel
+bash scripts/build.sh --python=3.7
 ```
-生成的二进制包在当前的dist目录下
+生成的二进制包在apex/dist目录下
 
 
 ## 安装
 
-进入dist目录，执行以下命令：
+进入apex/dist目录，执行以下命令：
 ```
+cd apex/dist/
 pip3 uninstall apex
-pip3 install --upgrade apex-0.1+ascend-cp37-cp37m-linux_{arch}.whl arch表示架构，为aarch64或x86_64
+pip3 install --upgrade apex-0.1+ascend-{version}.whl version代表python版本和cpu架构
 ```
 
 

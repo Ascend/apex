@@ -3,46 +3,33 @@
 
 ## Full Code Generation and Compilation
 
-Note: The root directory in the following description refers to the root directory of Ascend apex.
 
-**Obtain the native apex source code.**
+**Obtain the apex source code.**
 
-Obtain the source code from GitHub and run the following command in the root directory:
+Run the following command in the root directory:
 ```
-git clone https://github.com/NVIDIA/apex.git
+git clone -b master https://gitee.com/ascend/apex.git
+cd apex/
 ```
-Go to the source code directory and switch to the branch whose **commitid** is **4ef930c1c884fdca5f472ab2ce7cb9b505d26c1a**.
-```
-cd apex
-git checkout 4ef930c1c884fdca5f472ab2ce7cb9b505d26c1a
-cd ..
-```
-
-**Generate the apex code adapted to Ascend AI Processors.**
-
-Go to the **scripts** directory and run the following command:
-```
-bash gen.sh
-```
-The full code adapted to NPUs is generated in the **apex** directory under the root directory.
 
 **Compile the binary package of apex.**
 
-1. Ensure that PyTorch of the NPU version can be properly used. Otherwise, the apex compilation will be affected.
+1. Ensure that torch is installed and the version of setuptools is less than or equal to 65.7.0 (otherwise run: pip install setuptools==41.2.0).
 
-2. Go to the **apex** directory under the root directory and run the following command:
+2. Run the following command(python3.7-3.10 is supported):
 ```
-python3 setup.py --cpp_ext --npu_float_status bdist_wheel
+bash scripts/build.sh --python=3.7
 ```
 The generated binary package is stored in the current **dist** directory.
 
 
 ## Installation
 
-Go to the **dist** directory and run the following command:
+Run the following command:
 ```
+cd apex/dist/
 pip3 uninstall apex
-pip3 install --upgrade apex-0.1+ascend-cp37-cp37m-linux_{arch}.whl *arch* indicates the architecture, which can be AArch64 or x86_64.
+pip3 install --upgrade apex-0.1+ascend-{version}.whl *version* indicates the python version and cpu architecture.
 ```
 
 
