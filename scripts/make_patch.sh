@@ -34,7 +34,6 @@ mv $SRC_DIR/apex/optimizers/lamb.py temp/src/apex/optimizers
 mv $SRC_DIR/apex/optimizers/npu* temp/src/apex/optimizers
 
 mv $SRC_DIR/csrc/combine_tensors temp/src/csrc
-mv $SRC_DIR/csrc/npu_float_status temp/src/csrc
 
 mv $SRC_DIR/tests/L0/run_optimizers/test_lamb_mnist.py temp/tests/L0/run_optimizers
 mv $SRC_DIR/tests/L0/device.py temp/tests/L0
