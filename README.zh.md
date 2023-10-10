@@ -1,6 +1,256 @@
-# Ascend apex
+# Ascend Apex
 
-## Apex配套软件
+## 一、简介
+
+### 1.1 Ascend Apex功能介绍
+
+Ascend Apex以patch的形式发布，使能用户在华为昇腾（HUAWEI Ascend）AI处理器上，结合原生Apex进行混合精度训练，以提升AI模型的训练效率，同时保持模型的精度和稳定性。
+
+### 1.2 Ascend Apex代码目录说明
+
+   ```
+    ├── Apex
+      ├──patch
+           ├──npu.patch             # Ascend Apex对于原生Apex的patch文件，用于原生Apex中混合精度等功能基于昇腾AI处理器的适配          
+      ├──scripts
+           ├──build.sh              # Ascend Apex的构建脚本
+           ├──  ...
+      ├──src
+           ├──apex
+                ├──contrib          # 提供Tensor融合的Python API，供融合优化器使用
+                ├──optimizers       # 融合优化器的实现，部分场景下发挥昇腾的算力
+           ├──csrc/combine_tensors  # 提供Tensor融合的C++接口
+      ├──tests                      # 测试用例
+      ├──LICENSE
+      ├──  ...
+   ```
+
+### 1.3 Ascend Apex已支持特性
+
+- [x] O1模式
+- [x] O2模式
+- [x] 静态 loss scale
+- [x] 动态 loss scale
+- [x] combine tensors
+- [x] combine grad for unscale
+- [x] npu fused optimizer: adadelta, adam, adamp, adamw, sgd, lamb, rmsprop, rmsprop_tf
+- [x] 动态 loss scale新增dynamic_init_scale, scale_growth_factor, scale_backoff_factor, scale_window等可调参数
+
+### 1.4 使用方法
+
+##### 1.4.1 自动混合精度
+
+请参考https://nvidia.github.io/apex/amp.html。
+
+##### 1.4.2 使用融合梯度进行scale/unscale
+
+在amp.initialize()中将参数combine_grad设置为True。
+
+##### 1.4.3 融合优化器
+
+将原有优化器替换为apex.optimizers.xxx, 其中xxx为融合优化器名称。
+
+
+## 二、生成全量代码及编译、安装
+
+建议用户以非root用户做环境的安装，避免不必要的安全风险
+
+### 2.1 获取昇腾适配的Ascend apex源码
+
+```
+git clone -b master https://gitee.com/ascend/apex.git
+cd apex/
+```
+
+
+### 2.2 编译apex的二进制包
+
+1、请确保torch已安装，setuptools版本小于等于65.7.0（不满足时执行pip install setuptools==41.2.0）
+
+2、执行（支持python3.7-3.10，确保python3.x命令存在）
+```
+bash scripts/build.sh --python=3.7
+```
+生成的二进制包在apex/dist目录下
+
+
+### 2.3 安装
+
+进入apex/dist目录，执行以下命令：
+```
+cd apex/dist/
+pip3 uninstall apex
+pip3 install --upgrade apex-0.1+ascend-{version}.whl version代表python版本和cpu架构
+```
+
+### 2.4 安全加固（可选）
+
+##### 2.4.1 安全风险提示
+
+Ascend apex通过patch方式源码发布，仅对patch代码安全负责。
+
+##### 2.4.2 权限相关说明
+
+- 运行程序前，建议用户对训练所需文件做好权限控制等安全措施，请勿使用管理员账户安装运行，权限建议设置为 750，文件权限建议设置为 640。
+
+- 在多用户共享数据集的场景下，请根据需求最小化权限设置所需的文件夹以及文件的读写权限等，避免出现非法访问等安全问题。
+
+- 对于涉及隐私数据、商业资产等敏感文件，建议用户做好安全防护和权限控制，避免隐私泄露造成安全风险。
+
+- 对于涉及到使用 C++ 动态编译特性的场景，建议打开 ASLR （地址空间配置随机加载）以及对编译后的 SO 文件开启 strip（移除调试符号信息），减少程序的暴露面。 因编译由 DeepSpeed 原生框架负责且无此类配置选项，故需用户自行开启，开启方法参考下方章节。
+
+##### 2.4.3 打开 ASLR
+
+```
+echo 2 > /proc/sys/kernel/randomize_va_space
+```
+
+##### 2.4.4 对change_data_ptr等动态编译的so文件开启strip
+
+```
+strip -s /PATH/change_data_ptr.{version}.so
+```
+
+
+## 三、接口说明
+
+原生API及参数说明请参考`https://nvidia.github.io/apex/amp.html`， 这里仅对Ascend Apex新增接口、新增参数进行说明。
+
+### 3.1 apex.amp
+
+> apex.amp.initialize(models, optimizers=None, enabled=True, opt_level="O1", cast_model_type=None, patch_torch_functions=None, keep_batchnorm_fp32=None, master_weights=None, loss_scale=None, cast_model_outputs=None, num_losses=1, verbosity=1, dynamic_init_scale=2.**16, scale_growth_factor=2., scale_backoff_factor=0.5, scale_window=2000, min_loss_scale=None, max_loss_scale=2.**24, combine_grad=None, combine_ddp=None, ddp_replica_count=4, user_cast_preferred=None, check_combined_tensors=None)
+
+新增参数说明
+
+- dynamic_init_scale - 动态loss scale初始值（默认2**16）
+- scale_growth_factor - loss scale增长系数（默认2）
+- scale_backoff_factor - loss scale回退系数（默认0.5）
+- scale_window - loss scale窗口（默认2000）
+- combine_grad - 梯度融合开关 （默认None）
+- combine_ddp - 融合分布式数据并行 （默认None）
+- ddp_replica_count - DDP融合梯度副本数（默认4）
+- user_cast_preferred - O1模式下优先选择用户注册的精度模式（默认None）
+- check_combined_tensors - tensor融合检查（默认None）
+
+> apex.amp.scale_loss(loss, optimizers, loss_id=0, model=None, delay_unscale=False, delay_overflow_check=False)
+
+API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Apex中修改了接口内部实现，以保证在NPU上功能正常，在开启融合功能时使用融合张量进行scale/unscale以提升训练效率。
+
+### 3.2 apex.optimizers
+
+> class apex.optimizers.NpuFusedSGD(params, lr=required， momentum=MOMENTUM_MIN, dampening=DAMPENING_DEFAULT, weight_decay=WEIGHT_DECAY_MIN, nesterov=False)
+
+- params - 模型参数或模型参数组
+- lr - 学习率
+- momentum - 动量（默认值：0.0）
+- dampening - 阻尼系数（默认值：0.0）
+- weight_decay - 权重衰减（默认值：0.0）
+- nesterov - 使用nesterov动量（默认值：False）
+
+> class NpuFusedAdam(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False)
+
+- params - 模型参数或模型参数组
+- lr - 学习率（默认值：1e-3）
+- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
+- eps - 防止除0，提高数值稳定性 （默认值：1e-8）
+- weight_decay - 权重衰减（默认值：0）
+- amsgrad - 是否使用AMSGrad（默认值：False）
+
+> class NpuFusedAdamW(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-2, amsgrad=False)
+
+- params - 模型参数或模型参数组
+- lr - 学习率（默认值：1e-3）
+- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
+- eps - 防止除0，提高数值稳定性 （默认值：1e-8）
+- weight_decay - 权重衰减（默认值：0）
+- amsgrad - 是否使用AMSGrad（默认值：False）
+
+> class NpuFusedAdamP(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, delta=0.1, wd_ratio=0.1, nesterov=False)
+
+- params - 模型参数或模型参数组
+- lr - 学习率（默认值：1e-3）
+- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
+- eps - 分母防除0项，提高数值稳定性 （默认值：1e-8）
+- weight_decay - 权重衰减（默认值：0）
+- delta - 余弦相似度阈值（默认值：0.1）
+- wd_ratio - 权重衰减动态调整速率（默认值：0.1）
+- nesterov - 使用nesterov动量（默认值：False）
+
+> class NpuFusedBertAdam(params, lr=required, warmup=-1, t_total=-1, schedule='warmup_linear', b1=0.9, b2=0.99, e=1e-6, weight_decay=0.01, max_grad_norm=-1)
+
+- params - 模型参数或模型参数组
+- lr - 学习率（默认值：1e-3）
+- warmup - t_total的warmup比例（默认值：-1，表示不进行warmup）
+- t_total - 学习率调整的步数（默认值：-1，表示固定学习率）
+- schedule - 学习率warmup策略（默认值：'warmup_linear'）
+- b1 - Adams b1（默认值：0.9）
+- b2 - Adams b2（默认值：0.99）
+- e - Adams epsilon（默认值：1e-6）
+- weight_decay - 权重衰减（默认值：0.01）
+- max_grad_norm - 最大梯度正则（默认值：1.0，-1表示不做裁剪）
+
+> class NpuFusedAdadelta(params, lr=1.0, rho=0.9, eps=1e-6, weight_decay=0)
+
+- params - 模型参数或模型参数组
+- lr - 学习率（默认值：1e-3）
+- rho - 梯度的均方差系数（默认值：0.9）
+- eps - 分母防除0项，提高数值稳定性（默认值：1e-6）
+- weight_decay - 权重衰减（默认值：0）
+
+> class Lamb(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6, weight_decay=0, adam=False)
+
+- params - 模型参数或模型参数组
+- lr - 学习率（默认值：1e-3）
+- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
+- eps - 分母防除0项，提高数值稳定性（默认值：1e-8）
+- weight_decay - 权重衰减（默认值：0）
+- adam - 将strust_ratio设置为1，退化为Adam（默认值：False）
+
+> class NpuFusedLamb(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6, weight_decay=0, adam=False, use_global_grad_norm=False)
+
+- params - 模型参数或模型参数组
+- lr - 学习率。（默认值：1e-3）
+- betas -  用于计算梯度及其平方的运行平均值的系数。 （默认值：（0.9，0.999））
+- eps - 分母防除0项，提高数值稳定性（默认值：1e-8）
+- weight_decay - 权重衰减（默认值：0）
+- adam - 将strust_ratio设置为1，退化为Adam（默认值：False）
+- use_global_grad_norm - 使用全局梯度正则（默认值：False）
+
+> class NpuFusedRMSprop(params, lr=1e-2, alpha=0.99, eps=1e-8, weight_decay=0, momentum=0, centered=False)
+
+- params - 模型参数或模型参数组
+- lr - 学习率。（默认值：1e-3）
+- alpha - 平滑常量（默认值：0.99）
+- eps - 分母防除0项，提高数值稳定性（默认值：1e-8）
+- weight_decay - 权重衰减（默认值：0）
+- momentum - 动量因子（默认值：0）
+- centered - 计算中心RMSProp（默认值：False）
+
+> class NpuFusedRMSpropTF(params, lr=1e-2, alpha=0.9, eps=1e-10, weight_decay=0, momentum=0., centered=False, decoupled_decay=False, lr_in_momentum=True)
+
+- params - 模型参数或模型参数组
+- lr - 学习率（默认值：1e-3）
+- alpha - 平滑常量（默认值：0.9）
+- eps - 分母防除0项，提高数值稳定性（默认值：1e-10）
+- weight_decay - 权重衰减（默认值：0）
+- momentum - 动量因子（默认值：0）
+- centered -  计算中心RMSProp（默认值：False）
+- decoupled_decay - 权重衰减仅作用于参数（默认值：False）
+- lr_in_momentum - 计算动量buffer时使用lr（默认值：True）
+
+### 3.2 其它
+
+> model.zero_grad(set_to_none: bool = False)
+
+在torch>2.x版本后，该接口参数`set_to_none`默认值变化为True，由于融合功能要求模型梯度内存不能发生变化或释放，在开启融合功能时Ascend Apex通过Monkey Patch的方式将该接口参数`set_to_none`强制设置为False。
+
+> apex.optimizers.NpuFusedXXX.clip_optimizer_grad_norm_fused(max_norm, norm_type=2)
+
+在使用融合优化器时，该接口等价于`torch.nn.utils.clip_grad_norm_(parameters, max_norm, norm_type=2.0)`
+
+
+
+## 四、Ascend Apex配套软件
 
 | AscendPyTorch版本 | 支持PyTorch版本 | Pytorch Gitee分支名称 | Apex Gitee分支名称 |
 | :---------------- | :--------------- | :--------------------- | :----------------- |
@@ -18,65 +268,4 @@
 | 3.0.0             | 1.8.1            | v1.8.1-3.0.0          | v1.8.1-3.0.0       |
 | 3.0.0             | 1.11.0.rc2 (beta)| v1.11.0-3.0.0         | v1.11.0-3.0.0      |
 | 5.0.rc1           | 1.8.1.post1, 1.11.0  | v1.8.1-5.0.rc1, v1.11.0-5.0.rc1 | 5.0.rc1     |
-| 5.0.rc2           | 1.8.1.post2, 1.11.0, 2.0.1.rc1  | v1.8.1-5.0.rc2, v1.11.0-5.0.rc2, v2.0.1-5.0.rc2 | 5.0.rc2     |
-
-## 生成全量代码及编译
-
-##### 获取昇腾适配的Ascend apex源码
-
-```
-git clone -b master https://gitee.com/ascend/apex.git
-cd apex/
-```
-
-
-##### 编译apex的二进制包
-
-1、请确保torch已安装，setuptools版本小于等于65.7.0（不满足时执行pip install setuptools==41.2.0）
-
-2、执行（支持python3.7-3.10，确保python3.x命令存在）
-```
-bash scripts/build.sh --python=3.7
-```
-生成的二进制包在apex/dist目录下
-
-
-## 安装
-
-进入apex/dist目录，执行以下命令：
-```
-cd apex/dist/
-pip3 uninstall apex
-pip3 install --upgrade apex-0.1+ascend-{version}.whl version代表python版本和cpu架构
-```
-
-
-## 特性
-**已支持：**
-- [x] O1模式
-- [x] O2模式
-- [x] 静态 loss scale
-- [x] 动态 loss scale
-- [x] combine tensors
-- [x] combine grad for unscale
-- [x] npu fused optimizer: adadelta, adam, adamp, adamw, sgd, lamb, rmsprop, rmsprop_tf
-- [x] 动态 loss scale新增dynamic_init_scale, scale_growth_factor, scale_backoff_factor, scale_window等可调参数
-
-**说明：**
-
-当前版本的实现方式为python实现，不支持acl或者cuda优化。
-
-
-## 使用方法
-**自动混合精度：**
-
-请参考https://nvidia.github.io/apex/amp.html
-
-**combine grad for unscale：**
-
-在amp.initialize()中将参数combine_grad设置为True
-
-**npu fused optimizer：**
-
-将原有优化器替换为apex.optimizers.xxx, 其中xxx为融合优化器名称
-
+| 5.0.rc2           | 1.8.1.post2, 1.11.0, 2.0.1.rc1  | v1.8.1-5.0.rc2, 
