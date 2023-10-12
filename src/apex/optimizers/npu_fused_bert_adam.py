@@ -27,33 +27,38 @@ from ..contrib.combine_tensors import combine_npu
 WARMUP_DEFAULT = 0.002
 DEGREE_DEFAULT = 0.5
 
+
 def warmup_cosine(x, warmup=WARMUP_DEFAULT):
     if x < warmup:
-        return x/warmup
+        return x / warmup
     return 0.5 * (1.0 + torch.cos(math.pi * x))
+
 
 def warmup_constant(x, warmup=WARMUP_DEFAULT):
     if x < warmup:
-        return x/warmup
+        return x / warmup
     return 1.0
+
 
 def warmup_linear(x, warmup=WARMUP_DEFAULT):
     if x < warmup:
-        return x/warmup
-    return max((x - 1.)/(warmup - 1.), 0.)
-    
+        return x / warmup
+    return max((x - 1.) / (warmup - 1.), 0.)
+
+
 def warmup_poly(x, warmup=WARMUP_DEFAULT, degree=DEGREE_DEFAULT):
     if x < warmup:
-        return x/warmup
-    return (1.0 - x)**degree
+        return x / warmup
+    return (1.0 - x) ** degree
 
 
 SCHEDULES = {
-    'warmup_cosine':warmup_cosine,
-    'warmup_constant':warmup_constant,
-    'warmup_linear':warmup_linear,
-    'warmup_poly':warmup_poly,
+    'warmup_cosine': warmup_cosine,
+    'warmup_constant': warmup_constant,
+    'warmup_linear': warmup_linear,
+    'warmup_poly': warmup_poly,
 }
+
 
 class NpuFusedBertAdam(Optimizer):
     """Implements BERT version of Adam algorithm with weight decay fix. This is the fused version on NPU
@@ -190,7 +195,8 @@ class NpuFusedBertAdam(Optimizer):
 
             if group['t_total'] != -1:
                 schedule_fct = SCHEDULES[group['schedule']]
-                lr_scheduled = group['lr'] * schedule_fct(combined_param_state['step'] / group['t_total'], group['warmup'])
+                lr_scheduled = group['lr'] * schedule_fct(combined_param_state['step'] / group['t_total'],
+                                                          group['warmup'])
             else:
                 lr_scheduled = group['lr']
 

@@ -26,6 +26,7 @@ MOMENTUM_MIN = 0.0
 DAMPENING_DEFAULT = 0.0
 WEIGHT_DECAY_MIN = 0.0
 
+
 class NpuFusedSGD(Optimizer):
     r"""Implements stochastic gradient descent (optionally with momentum).
 
@@ -104,7 +105,7 @@ class NpuFusedSGD(Optimizer):
         group = self.param_groups[group_index]
         stash = self._amp_stash
         group_params_list = stash.params_lists_indexed_by_group[group_index]
-        
+
         weight_decay = group['weight_decay']
         momentum = group['momentum']
 
@@ -128,7 +129,7 @@ class NpuFusedSGD(Optimizer):
             combined_momentum_buffer = None
             if len(momentum_buffer_list) > 0:
                 combined_momentum_buffer = combine_npu(momentum_buffer_list)
-            
+
             combined_state = defaultdict(dict)
             combined_state['momentum_buffer'] = combined_momentum_buffer
             combined_param_states.append(combined_state)
@@ -159,12 +160,12 @@ class NpuFusedSGD(Optimizer):
         combined_group_grads = stash.combined_grads_indexed_by_group[group_index]
         combined_group_param_states = stash.combined_param_states_indexed_by_group[group_index]
 
-        for combined_param, combined_grad, combined_param_state in zip(combined_group_params, 
-                                                                       combined_group_grads, 
+        for combined_param, combined_grad, combined_param_state in zip(combined_group_params,
+                                                                       combined_group_grads,
                                                                        combined_group_param_states):
             if combined_param is None or combined_grad is None:
                 continue
-            
+
             if weight_decay != 0:
                 combined_grad = combined_grad.add(combined_param, alpha=weight_decay)
             if momentum != 0:

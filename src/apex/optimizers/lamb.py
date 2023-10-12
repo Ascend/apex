@@ -1,5 +1,3 @@
-# This is based on pytorch-lamb (https://github.com/cybertronai/pytorch-lamb).
-#
 # Copyright (c) 2021, Huawei Technologies. All rights reserved.
 #
 # Licensed under the BSD 3-Clause License  (the "License");
@@ -19,10 +17,13 @@
 import torch
 from torch.optim import Optimizer
 
+
 class Lamb(Optimizer):
     r"""Implements Lamb algorithm.
 
     It has been proposed in `Large Batch Optimization for Deep Learning: Training BERT in 76 minutes`_.
+
+    This is based on pytorch-lamb (https://github.com/cybertronai/pytorch-lamb).
 
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining

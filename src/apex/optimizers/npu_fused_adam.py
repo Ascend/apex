@@ -22,8 +22,8 @@ from torch.optim.optimizer import Optimizer
 
 from ..contrib.combine_tensors import combine_npu
 
-class NpuFusedAdam(Optimizer):
 
+class NpuFusedAdam(Optimizer):
     """Implements Adam algorithm.
 
     Currently NPU-only.  Requires Apex to be installed via
@@ -146,7 +146,7 @@ class NpuFusedAdam(Optimizer):
                 exp_avg_sq_list.append(state['exp_avg_sq'])
                 if amsgrad:
                     max_exp_avg_sq_list.append(state['max_exp_avg_sq'])
-            
+
             combined_step = 0
             combined_exp_avg = None
             combined_exp_avg_sq = None
@@ -157,7 +157,7 @@ class NpuFusedAdam(Optimizer):
                 combined_exp_avg = combine_npu(exp_avg_list)
                 combined_exp_avg_sq = combine_npu(exp_avg_sq_list)
                 combined_max_exp_avg_sq = combine_npu(max_exp_avg_sq_list)
-            
+
             combined_state = defaultdict(dict)
             combined_state['step'] = combined_step
             combined_state['exp_avg'] = combined_exp_avg
@@ -187,7 +187,7 @@ class NpuFusedAdam(Optimizer):
             grad = p.grad
             if grad.is_sparse:
                 raise RuntimeError('NpuFusedAdam does not support sparse gradients, '
-                                    'please consider SparseAdam instead')
+                                   'please consider SparseAdam instead')
             state_p = self.state[p]
             state_p['step'] += 1
 
@@ -199,8 +199,8 @@ class NpuFusedAdam(Optimizer):
         combined_group_grads = stash.combined_grads_indexed_by_group[group_index]
         combined_group_param_states = stash.combined_param_states_indexed_by_group[group_index]
 
-        for combined_param, combined_grad, combined_param_state in zip(combined_group_params, 
-                                                                       combined_group_grads, 
+        for combined_param, combined_grad, combined_param_state in zip(combined_group_params,
+                                                                       combined_group_grads,
                                                                        combined_group_param_states):
             if combined_param is None or combined_grad is None:
                 continue

@@ -1,5 +1,3 @@
-# This is based on pytorch-lamb (https://github.com/cybertronai/pytorch-lamb).
-#
 # Copyright (c) 2021, Huawei Technologies. All rights reserved.
 #
 # Licensed under the BSD 3-Clause License  (the "License");
@@ -23,10 +21,13 @@ from torch.optim.optimizer import Optimizer
 
 from ..contrib.combine_tensors import combine_npu
 
+
 class NpuFusedLamb(Optimizer):
     r"""Implements NpuFusedLamb algorithm.
 
     It has been proposed in `Large Batch Optimization for Deep Learning: Training BERT in 76 minutes`_.
+
+    This is based on pytorch-lamb (https://github.com/cybertronai/pytorch-lamb).
 
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
@@ -159,13 +160,13 @@ class NpuFusedLamb(Optimizer):
                 if grad.is_sparse:
                     raise RuntimeError('NpuFusedLamb does not support sparse gradients, '
                                        'please consider SparseAdam instead.')
-                
+
                 self._init_param_state(p)
                 state = self.state[p]
                 step_list.append(state['step'])
                 exp_avg_list.append(state['exp_avg'])
                 exp_avg_sq_list.append(state['exp_avg_sq'])
-            
+
             combined_step = 0
             combined_exp_avg = None
             combined_exp_avg_sq = None
@@ -174,7 +175,7 @@ class NpuFusedLamb(Optimizer):
                 combined_step = step_list[0]
                 combined_exp_avg = combine_npu(exp_avg_list)
                 combined_exp_avg_sq = combine_npu(exp_avg_sq_list)
-            
+
             combined_state = defaultdict(dict)
             combined_state['step'] = combined_step
             combined_state['exp_avg'] = combined_exp_avg
@@ -261,8 +262,8 @@ class NpuFusedLamb(Optimizer):
                 combined_param_pow.copy_(combined_param.pow(2))
                 combined_adam_step_pow.copy_(adam_step.pow(2))
 
-                for param_pow, adam_step_pow, trust_ratio in zip(param_pow_list, 
-                                                                 adam_step_pow_list, 
+                for param_pow, adam_step_pow, trust_ratio in zip(param_pow_list,
+                                                                 adam_step_pow_list,
                                                                  trust_ratio_list):
                     weight_norm = param_pow.sum().sqrt().clamp(0, 10)
                     adam_norm = adam_step_pow.sum().sqrt()

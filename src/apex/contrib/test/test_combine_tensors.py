@@ -30,8 +30,10 @@ y_after_combine_des = 'y after combine: '
 z_after_combine_des = 'z after combine: '
 combine_tensor_des = 'combine tensor: '
 
+
 def print_tensor_phy_info(des, tensor):
     print(des, tensor.data_ptr(), tensor.size(), tensor.device)
+
 
 class TestCombineTensors(unittest.TestCase):
 
@@ -44,10 +46,10 @@ class TestCombineTensors(unittest.TestCase):
             list_of_tensors_mask.append(torch.ones_like(tensor))
         return combine_npu(list_of_tensors_mask)
 
-    def basic_functionality(self, dtype = torch.float32):
-        x = torch.zeros((2,2,2,2), device = self.device, dtype = dtype)
-        y = torch.zeros((4,4), device = self.device, dtype = dtype)
-        z = torch.zeros((3,3,3), device = self.device, dtype = dtype)
+    def basic_functionality(self, dtype=torch.float32):
+        x = torch.zeros((2, 2, 2, 2), device=self.device, dtype=dtype)
+        y = torch.zeros((4, 4), device=self.device, dtype=dtype)
+        z = torch.zeros((3, 3, 3), device=self.device, dtype=dtype)
 
         print_tensor_phy_info(x_before_combine_des, x)
         print_tensor_phy_info(y_before_combine_des, y)
@@ -80,9 +82,9 @@ class TestCombineTensors(unittest.TestCase):
 
     def test_large_functionality(self):
         print('----------------------test functionality with large tensors------------------------')
-        x = torch.zeros((200,20,200,20), device = self.device)
-        y = torch.zeros((4000,4000), device = self.device)
-        z = torch.zeros((300,300,300), device = self.device)
+        x = torch.zeros((200, 20, 200, 20), device=self.device)
+        y = torch.zeros((4000, 4000), device=self.device)
+        z = torch.zeros((300, 300, 300), device=self.device)
 
         print_tensor_phy_info(x_before_combine_des, x)
         print_tensor_phy_info(y_before_combine_des, y)
@@ -180,6 +182,7 @@ class TestCombineTensors(unittest.TestCase):
 
         print('new_tensor with size of x: ', new_tensor.data_ptr(), new_tensor.size(), new_tensor.device)
         self.assertNotEqual(store_x_after_combine, new_tensor.data_ptr())
+
 
 if __name__ == '__main__':
     torch.npu.set_device("npu:0")

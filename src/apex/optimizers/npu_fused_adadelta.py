@@ -21,6 +21,7 @@ from torch.optim.optimizer import Optimizer
 
 from ..contrib.combine_tensors import combine_npu
 
+
 class NpuFusedAdadelta(Optimizer):
     """Implements NpuFusedAdadelta algorithm.
     Currently NPU-only.  Requires Apex to be installed via
@@ -28,7 +29,7 @@ class NpuFusedAdadelta(Optimizer):
 
     This version of fused ADADELTA implements 1 fusions.
 
-      * A combine-tensor apply launch that batches the elementwise updates applied to all the model's parameters 
+      * A combine-tensor apply launch that batches the elementwise updates applied to all the model's parameters
         into one or a few kernel launches.
 
     :class:`apex.optimizers.NpuFusedAdadelta` may be used as a drop-in replacement for ``torch.optim.Adadelta``::
@@ -106,13 +107,13 @@ class NpuFusedAdadelta(Optimizer):
                 grad = p.grad
                 if grad.is_sparse:
                     raise RuntimeError('NpuFusedAdadelta does not support sparse gradients')
-                
+
                 self._init_param_state(p)
                 state = self.state[p]
                 step_list.append(state['step'])
                 square_avg_list.append(state['square_avg'])
                 acc_delta_list.append(state['acc_delta'])
-            
+
             combined_step = 0
             combined_square_avg = None
             combined_acc_delta = None
@@ -121,7 +122,7 @@ class NpuFusedAdadelta(Optimizer):
                 combined_step = step_list[0]
                 combined_square_avg = combine_npu(square_avg_list)
                 combined_acc_delta = combine_npu(acc_delta_list)
-            
+
             combined_state = defaultdict(dict)
             combined_state['step'] = combined_step
             combined_state['square_avg'] = combined_square_avg
@@ -160,8 +161,8 @@ class NpuFusedAdadelta(Optimizer):
         combined_group_grads = stash.combined_grads_indexed_by_group[group_index]
         combined_group_param_states = stash.combined_param_states_indexed_by_group[group_index]
 
-        for combined_param, combined_grad, combined_param_state in zip(combined_group_params, 
-                                                                       combined_group_grads, 
+        for combined_param, combined_grad, combined_param_state in zip(combined_group_params,
+                                                                       combined_group_grads,
                                                                        combined_group_param_states):
             if combined_param is None or combined_grad is None:
                 continue
