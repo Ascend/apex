@@ -53,6 +53,8 @@ Ascend Apex以patch的形式发布，使能用户在华为昇腾（HUAWEI Ascend
 
 ## 二、生成全量代码及编译、安装
 
+*推荐使用docker，在容器内编译：[参考链接](https://gitee.com/ascend/apex/tree/master/scripts/docker/README.md)
+
 建议用户以非root用户做环境的安装，避免不必要的安全风险
 
 ### 2.1 获取昇腾适配的Ascend apex源码

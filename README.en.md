@@ -25,6 +25,8 @@ The generated binary package is stored in the current **dist** directory.
 
 ## Installation
 
+*using docker is recommended：[Link](https://gitee.com/ascend/apex/tree/master/scripts/docker/README.md)
+
 Run the following command:
 ```
 cd apex/dist/
