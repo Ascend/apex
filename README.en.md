@@ -3,12 +3,13 @@
 
 ## Full Code Generation and Compilation
 
+*using docker is recommended：[Link](https://gitee.com/ascend/apex/tree/5.0.rc3/scripts/docker/README.md)
 
 **Obtain the apex source code.**
 
 Run the following command in the root directory:
 ```
-git clone -b master https://gitee.com/ascend/apex.git
+git clone -b 5.0.rc3 https://gitee.com/ascend/apex.git
 cd apex/
 ```
 
