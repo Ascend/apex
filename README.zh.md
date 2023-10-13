@@ -22,10 +22,12 @@
 
 ## 生成全量代码及编译
 
+*推荐使用docker，在容器内编译：[参考链接](https://gitee.com/ascend/apex/tree/5.0.rc3/scripts/docker/README.md)
+
 ##### 获取昇腾适配的Ascend apex源码
 
 ```
-git clone -b master https://gitee.com/ascend/apex.git
+git clone -b 5.0.rc3 https://gitee.com/ascend/apex.git
 cd apex/
 ```
 
