@@ -134,11 +134,19 @@ strip -s /PATH/change_data_ptr.{version}.so
 - user_cast_preferred - O1模式下优先选择用户注册的精度模式（默认None）
 - check_combined_tensors - tensor融合检查（默认None）
 
+约束条件：
+
+启用融合功能（combine_grad/combine_ddp）后，在创建融合张量时会申请融合后张量大小的内存，device内存不足时不建议使用。融合张量内存与原张量共享内存，若更改其一的内存地址，将破坏共享内存机制，可以引起精度异常等问题，使用时须用户自行保证共享内存不被破坏。
+
 > apex.amp.scale_loss(loss, optimizers, loss_id=0, model=None, delay_unscale=False, delay_overflow_check=False)
 
 API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Apex中修改了接口内部实现，以保证在NPU上功能正常，在开启融合功能时使用融合张量进行scale/unscale以提升训练效率。
 
 ### 3.2 apex.optimizers
+
+融合优化器约束条件：
+
+启用融合优化器（如apex.optimizers.NpuFusedSGD）后，在创建融合张量时会申请融合后张量大小的内存，device内存不足时不建议使用。融合张量内存与原张量共享内存，若更改其一的内存地址，将破坏共享内存机制，可以引起精度异常等问题，使用时须用户自行保证共享内存不被破坏。
 
 > class apex.optimizers.NpuFusedSGD(params, lr=required， momentum=MOMENTUM_MIN, dampening=DAMPENING_DEFAULT, weight_decay=WEIGHT_DECAY_MIN, nesterov=False)
 
@@ -270,4 +278,26 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 | 3.0.0             | 1.8.1            | v1.8.1-3.0.0          | v1.8.1-3.0.0       |
 | 3.0.0             | 1.11.0.rc2 (beta)| v1.11.0-3.0.0         | v1.11.0-3.0.0      |
 | 5.0.rc1           | 1.8.1.post1, 1.11.0  | v1.8.1-5.0.rc1, v1.11.0-5.0.rc1 | 5.0.rc1     |
-| 5.0.rc2           | 1.8.1.post2, 1.11.0, 2.0.1.rc1  | v1.8.1-5.0.rc2, 
+| 5.0.rc2           | 1.8.1.post2, 1.11.0, 2.0.1.rc1  | v1.8.1-5.0.rc2, v1.11.0-5.0.rc2 | 5.0.rc2 |
+| 5.0.rc3           | 1.11.0, 2.0.1.rc1  | v1.11.1-5.0.rc3, v2.0.1-5.0.rc3 | 5.0.rc3 |
+
+
+### 五、附录
+
+##### 5.1 公网地址说明
+
+|      类型      |          文件名          |             公网IP地址/公网URL地址/域名/邮箱地址             |          用途说明           |
+| :------------: | :----------------------: | :----------------------------------------------------------: | :-------------------------: |
+|  开源代码  |      scripts/build.sh       |          https://github.com/NVIDIA/apex.git          | 构建脚本中拉取原生Apex源码，结合Ascend Apex patch构建安装包 |
+
+##### 5.2 文件权限清单
+
+建议用户根据自身需要，参考此清单对各类文件进行加固:
+
+|      类型      | linux权限参考值 |                       备注                       |
+| :------------: | :-------------: | :----------------------------------------------: |
+| 文件夹 / 目录  | 750 (rwxr-x---) |               对于共享目录可为755                |
+|   数据集文件   | 640 (rw-r-----) |            对于共享数据集文件可为644             |
+| checkpoint文件 | 640 (rw-r-----) |                                                  |
+|    程序文件    | 440 (r--r-----) | 除非开发调试场景，正常运行时程序文件不应再次修改 |
+|   可执行脚本   | 750 (rwxr-x---) |                                                  |
