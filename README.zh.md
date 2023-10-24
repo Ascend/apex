@@ -12,9 +12,7 @@ Ascend Apex以patch的形式发布，使能用户在华为昇腾（HUAWEI Ascend
     ├── Apex
       ├──patch
            ├──npu.patch             # Ascend Apex对于原生Apex的patch文件，用于原生Apex中混合精度等功能基于昇腾AI处理器的适配          
-      ├──scripts
-           ├──build.sh              # Ascend Apex的构建脚本
-           ├──  ...
+      ├──scripts                    # Ascend Apex的构建脚本目录
       ├──src
            ├──apex
                 ├──contrib          # 提供Tensor融合的Python API，供融合优化器使用
@@ -22,7 +20,6 @@ Ascend Apex以patch的形式发布，使能用户在华为昇腾（HUAWEI Ascend
            ├──csrc/combine_tensors  # 提供Tensor融合的C++接口
       ├──tests                      # 测试用例
       ├──LICENSE
-      ├──  ...
    ```
 
 ### 1.3 Ascend Apex已支持特性
@@ -301,3 +298,6 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 | checkpoint文件 | 640 (rw-r-----) |                                                  |
 |    程序文件    | 440 (r--r-----) | 除非开发调试场景，正常运行时程序文件不应再次修改 |
 |   可执行脚本   | 750 (rwxr-x---) |                                                  |
+
+##### 5.3 通信矩阵说明
+本插件不涉及端口侦听等相关行为，相关端口由用户在模型脚本指定调用原生接口开启，建议用户注意做好安全防护，单机训练的情况下请勿绑定全局端口。
