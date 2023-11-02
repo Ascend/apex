@@ -1,10 +1,10 @@
-# Ascend Apex
+# Apex Patch
 
 ## 一、简介
 
-### 1.1 Ascend Apex功能介绍
+### 1.1 Apex Patch功能介绍
 
-Ascend Apex以patch的形式发布，使能用户在华为昇腾（HUAWEI Ascend）AI处理器上，结合原生Apex进行混合精度训练，以提升AI模型的训练效率，同时保持模型的精度和稳定性。
+Apex Patch以代码patch的形式发布，用户通过对原始Apex进行patch，可以在华为昇腾AI处理器上，使用Apex的自动混合精度训练功能进行模型训练，提升AI模型的训练效率，同时保持模型的精度和稳定性。此外，Apex-patch额外提供了如梯度融合、融合优化器等，以提升部分场景下模型在昇腾NPU上的训练效率，供用户选择使用。
 
 ### 1.2 Ascend Apex代码目录说明
 
@@ -24,28 +24,58 @@ Ascend Apex以patch的形式发布，使能用户在华为昇腾（HUAWEI Ascend
 
 ### 1.3 Ascend Apex已支持特性
 
-- [x] O1模式
-- [x] O2模式
-- [x] 静态 loss scale
-- [x] 动态 loss scale
-- [x] combine tensors
+- [x] O1/O2自动混合精度模式
+- [x] 动态/静态 loss scale
+- [x] combine ddp
 - [x] combine grad for unscale
 - [x] npu fused optimizer: adadelta, adam, adamp, adamw, sgd, lamb, rmsprop, rmsprop_tf
-- [x] 动态 loss scale新增dynamic_init_scale, scale_growth_factor, scale_backoff_factor, scale_window等可调参数
+- [x] 动态 loss scale新增可调参数，如：dynamic_init_scale, scale_growth_factor, scale_backoff_factor, scale_window
 
 ### 1.4 使用方法
 
 ##### 1.4.1 自动混合精度
 
-请参考https://nvidia.github.io/apex/amp.html。
+使用apex.amp进行混合精度训练，如：
+```
+model = torch.nn.Linear(D_in, D_out).cuda()
+optimzier = torch.optim.SGD(model.parameters(), lr=1e-3)
+
+model, optimizer = amp.initialize(model, optimizer, opt_level='O1')
+...
+with amp.scale_loss(loss, optimizer) as scaled_loss:
+  scaled_loss.backward()
+...
+```
+
+详细使用方式请请参考https://nvidia.github.io/apex/amp.html。
 
 ##### 1.4.2 使用融合梯度进行scale/unscale
 
-在amp.initialize()中将参数combine_grad设置为True。
+在amp.initialize()中将参数combine_grad设置为True，如：
+```
+model = torch.nn.Linear(D_in, D_out).cuda()
+optimzier = torch.optim.SGD(model.parameters(), lr=1e-3)
+
+model, optimizer = amp.initialize(model, optimizer, opt_level='O1', combine_grad=True)  # 增加combine_grad参数
+...
+with amp.scale_loss(loss, optimizer) as scaled_loss:
+  scaled_loss.backward()
+...
+```
 
 ##### 1.4.3 融合优化器
 
-将原有优化器替换为apex.optimizers.xxx, 其中xxx为融合优化器名称。
+将原有优化器替换为apex.optimizers.xxx, 其中xxx为融合优化器名称，如：
+```
+model = torch.nn.Linear(D_in, D_out).cuda()
+optimzier = apex.optimizers.NpuFusedSGD(model.parameters(), lr=1e-3) # 使用apex.optimizers.NpuFusedSGD
+
+model, optimizer = amp.initialize(model, optimizer, opt_level='O1', combine_grad=True)
+...
+with amp.scale_loss(loss, optimizer) as scaled_loss:
+  scaled_loss.backward()
+...
+```
 
 
 ## 二、生成全量代码及编译、安装
@@ -117,7 +147,7 @@ strip -s /PATH/change_data_ptr.{version}.so
 
 ### 3.1 apex.amp
 
-> apex.amp.initialize(models, optimizers=None, enabled=True, opt_level="O1", cast_model_type=None, patch_torch_functions=None, keep_batchnorm_fp32=None, master_weights=None, loss_scale=None, cast_model_outputs=None, num_losses=1, verbosity=1, dynamic_init_scale=2.**16, scale_growth_factor=2., scale_backoff_factor=0.5, scale_window=2000, min_loss_scale=None, max_loss_scale=2.**24, combine_grad=None, combine_ddp=None, ddp_replica_count=4, user_cast_preferred=None, check_combined_tensors=None)
+> 3.1.1 apex.amp.initialize(models, optimizers=None, enabled=True, opt_level="O1", cast_model_type=None, patch_torch_functions=None, keep_batchnorm_fp32=None, master_weights=None, loss_scale=None, cast_model_outputs=None, num_losses=1, verbosity=1, dynamic_init_scale=2.**16, scale_growth_factor=2., scale_backoff_factor=0.5, scale_window=2000, min_loss_scale=None, max_loss_scale=2.**24, combine_grad=None, combine_ddp=None, ddp_replica_count=4, user_cast_preferred=None, check_combined_tensors=None)
 
 新增参数说明
 
@@ -135,7 +165,7 @@ strip -s /PATH/change_data_ptr.{version}.so
 
 启用融合功能（combine_grad/combine_ddp）后，在创建融合张量时会申请融合后张量大小的内存，device内存不足时不建议使用。融合张量内存与原张量共享内存，若更改其一的内存地址，将破坏共享内存机制，可以引起精度异常等问题，使用时须用户自行保证共享内存不被破坏。
 
-> apex.amp.scale_loss(loss, optimizers, loss_id=0, model=None, delay_unscale=False, delay_overflow_check=False)
+> 3.1.2 apex.amp.scale_loss(loss, optimizers, loss_id=0, model=None, delay_unscale=False, delay_overflow_check=False)
 
 API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Apex中修改了接口内部实现，以保证在NPU上功能正常，在开启融合功能时使用融合张量进行scale/unscale以提升训练效率。
 
@@ -145,7 +175,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 
 启用融合优化器（如apex.optimizers.NpuFusedSGD）后，在创建融合张量时会申请融合后张量大小的内存，device内存不足时不建议使用。融合张量内存与原张量共享内存，若更改其一的内存地址，将破坏共享内存机制，可以引起精度异常等问题，使用时须用户自行保证共享内存不被破坏。
 
-> class apex.optimizers.NpuFusedSGD(params, lr=required， momentum=MOMENTUM_MIN, dampening=DAMPENING_DEFAULT, weight_decay=WEIGHT_DECAY_MIN, nesterov=False)
+> 3.2.1 class apex.optimizers.NpuFusedSGD(params, lr=required， momentum=MOMENTUM_MIN, dampening=DAMPENING_DEFAULT, weight_decay=WEIGHT_DECAY_MIN, nesterov=False)
 
 - params - 模型参数或模型参数组
 - lr - 学习率
@@ -154,7 +184,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - weight_decay - 权重衰减（默认值：0.0）
 - nesterov - 使用nesterov动量（默认值：False）
 
-> class NpuFusedAdam(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False)
+> 3.2.2 class NpuFusedAdam(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False)
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
@@ -163,7 +193,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - weight_decay - 权重衰减（默认值：0）
 - amsgrad - 是否使用AMSGrad（默认值：False）
 
-> class NpuFusedAdamW(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-2, amsgrad=False)
+> 3.2.3 class NpuFusedAdamW(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-2, amsgrad=False)
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
@@ -172,7 +202,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - weight_decay - 权重衰减（默认值：0）
 - amsgrad - 是否使用AMSGrad（默认值：False）
 
-> class NpuFusedAdamP(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, delta=0.1, wd_ratio=0.1, nesterov=False)
+> 3.2.4 class NpuFusedAdamP(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, delta=0.1, wd_ratio=0.1, nesterov=False)
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
@@ -183,7 +213,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - wd_ratio - 权重衰减动态调整速率（默认值：0.1）
 - nesterov - 使用nesterov动量（默认值：False）
 
-> class NpuFusedBertAdam(params, lr=required, warmup=-1, t_total=-1, schedule='warmup_linear', b1=0.9, b2=0.99, e=1e-6, weight_decay=0.01, max_grad_norm=-1)
+> 3.2.5 class NpuFusedBertAdam(params, lr=required, warmup=-1, t_total=-1, schedule='warmup_linear', b1=0.9, b2=0.99, e=1e-6, weight_decay=0.01, max_grad_norm=-1)
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
@@ -196,7 +226,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - weight_decay - 权重衰减（默认值：0.01）
 - max_grad_norm - 最大梯度正则（默认值：1.0，-1表示不做裁剪）
 
-> class NpuFusedAdadelta(params, lr=1.0, rho=0.9, eps=1e-6, weight_decay=0)
+> 3.2.6 class NpuFusedAdadelta(params, lr=1.0, rho=0.9, eps=1e-6, weight_decay=0)
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
@@ -204,7 +234,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - eps - 分母防除0项，提高数值稳定性（默认值：1e-6）
 - weight_decay - 权重衰减（默认值：0）
 
-> class Lamb(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6, weight_decay=0, adam=False)
+> 3.2.7 class Lamb(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6, weight_decay=0, adam=False)
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
@@ -213,7 +243,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - weight_decay - 权重衰减（默认值：0）
 - adam - 将strust_ratio设置为1，退化为Adam（默认值：False）
 
-> class NpuFusedLamb(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6, weight_decay=0, adam=False, use_global_grad_norm=False)
+> 3.2.8 class NpuFusedLamb(params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6, weight_decay=0, adam=False, use_global_grad_norm=False)
 
 - params - 模型参数或模型参数组
 - lr - 学习率。（默认值：1e-3）
@@ -223,7 +253,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - adam - 将strust_ratio设置为1，退化为Adam（默认值：False）
 - use_global_grad_norm - 使用全局梯度正则（默认值：False）
 
-> class NpuFusedRMSprop(params, lr=1e-2, alpha=0.99, eps=1e-8, weight_decay=0, momentum=0, centered=False)
+> 3.2.9 class NpuFusedRMSprop(params, lr=1e-2, alpha=0.99, eps=1e-8, weight_decay=0, momentum=0, centered=False)
 
 - params - 模型参数或模型参数组
 - lr - 学习率。（默认值：1e-3）
@@ -233,7 +263,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - momentum - 动量因子（默认值：0）
 - centered - 计算中心RMSProp（默认值：False）
 
-> class NpuFusedRMSpropTF(params, lr=1e-2, alpha=0.9, eps=1e-10, weight_decay=0, momentum=0., centered=False, decoupled_decay=False, lr_in_momentum=True)
+> 3.2.10 class NpuFusedRMSpropTF(params, lr=1e-2, alpha=0.9, eps=1e-10, weight_decay=0, momentum=0., centered=False, decoupled_decay=False, lr_in_momentum=True)
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
@@ -245,13 +275,13 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - decoupled_decay - 权重衰减仅作用于参数（默认值：False）
 - lr_in_momentum - 计算动量buffer时使用lr（默认值：True）
 
-### 3.2 其它
+### 3.3 其它
 
-> model.zero_grad(set_to_none: bool = False)
+> 3.3.1 model.zero_grad(set_to_none: bool = False)
 
 在torch>2.x版本后，该接口参数`set_to_none`默认值变化为True，由于融合功能要求模型梯度内存不能发生变化或释放，在开启融合功能时Ascend Apex通过Monkey Patch的方式将该接口参数`set_to_none`强制设置为False。
 
-> apex.optimizers.NpuFusedXXX.clip_optimizer_grad_norm_fused(max_norm, norm_type=2)
+> 3.3.2 apex.optimizers.NpuFusedXXX.clip_optimizer_grad_norm_fused(max_norm, norm_type=2)
 
 在使用融合优化器时，该接口等价于`torch.nn.utils.clip_grad_norm_(parameters, max_norm, norm_type=2.0)`
 
