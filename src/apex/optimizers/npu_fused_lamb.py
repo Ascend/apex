@@ -27,7 +27,6 @@ class NpuFusedLamb(Optimizer):
 
     It has been proposed in `Large Batch Optimization for Deep Learning: Training BERT in 76 minutes`_.
 
-    This is based on pytorch-lamb (https://github.com/cybertronai/pytorch-lamb).
 
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
@@ -42,8 +41,6 @@ class NpuFusedLamb(Optimizer):
             Adam. Useful for comparison purposes.
         use_global_grad_norm(bool, optional, default=False): use global grad norm
 
-    .. _Large Batch Optimization for Deep Learning: Training BERT in 76 minutes:
-        https://arxiv.org/abs/1904.00962
     """
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6,

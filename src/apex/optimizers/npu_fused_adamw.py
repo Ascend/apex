@@ -64,12 +64,6 @@ class NpuFusedAdamW(Optimizer):
         amsgrad (boolean, optional, default: False): whether to use the AMSGrad variant of
             this algorithm from the paper `On the Convergence of Adam and Beyond`_
 
-    .. _Adam\: A Method for Stochastic Optimization:
-        https://arxiv.org/abs/1412.6980
-    .. _Decoupled Weight Decay Regularization:
-        https://arxiv.org/abs/1711.05101
-    .. _On the Convergence of Adam and Beyond:
-        https://openreview.net/forum?id=ryQu7f-RZ
     """
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8,

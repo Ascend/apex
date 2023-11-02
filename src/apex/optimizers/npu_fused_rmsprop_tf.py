@@ -31,8 +31,6 @@ class NpuFusedRMSpropTF(Optimizer):
     ``pip install -v --no-cache-dir --global-option="--cpp_ext" ./``.
 
     Originally cut & paste from PyTorch RMSProp
-    https://github.com/pytorch/pytorch/blob/063946d2b3f3f1e953a2a3b54e0b34f1393de295/torch/optim/rmsprop.py
-    Licensed under BSD-Clause 3 (ish), https://github.com/pytorch/pytorch/blob/master/LICENSE
 
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining

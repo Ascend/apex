@@ -1,5 +1,3 @@
-# This is based on pytorch-lamb (https://github.com/cybertronai/pytorch-lamb).
-#
 # Copyright (c) 2021, Huawei Technologies. All rights reserved.
 #
 # Licensed under the BSD 3-Clause License  (the "License");
@@ -14,10 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""MNIST example.
-
-Based on https://github.com/pytorch/examples/blob/master/mnist/main.py
-"""
 
 from __future__ import print_function
 import argparse

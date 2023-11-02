@@ -23,7 +23,6 @@ class Lamb(Optimizer):
 
     It has been proposed in `Large Batch Optimization for Deep Learning: Training BERT in 76 minutes`_.
 
-    This is based on pytorch-lamb (https://github.com/cybertronai/pytorch-lamb).
 
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
@@ -37,8 +36,6 @@ class Lamb(Optimizer):
         adam (bool, optional): always use trust ratio = 1, which turns this into
             Adam. Useful for comparison purposes.
 
-    .. _Large Batch Optimization for Deep Learning: Training BERT in 76 minutes:
-        https://arxiv.org/abs/1904.00962
     """
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-6,

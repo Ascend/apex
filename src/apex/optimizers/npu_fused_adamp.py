@@ -48,7 +48,6 @@ class NpuFusedAdamP(Optimizer):
         opt.step()
 
 
-    AdamP Optimizer Implementation copied from https://github.com/clovaai/AdamP/blob/master/adamp/adamp.py
 
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
@@ -63,8 +62,6 @@ class NpuFusedAdamP(Optimizer):
         wd_ratio (float, optional, default: 0.1): weight decay ratio for dynamic tuning
         nesterov (bool, optional, default: False): enables Nesterov momentum
 
-    .. _Slowing Down the Weight Norm Increase in Momentum-based Optimizers:
-        https://arxiv.org/abs/2006.08217
     """
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8,

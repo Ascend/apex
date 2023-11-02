@@ -64,7 +64,6 @@ class NpuFusedSGD(Optimizer):
         dampening (float, optional, default=0): dampening for momentum
         nesterov (bool, optional, default=False): enables Nesterov momentum
 
-    __ http://www.cs.toronto.edu/%7Ehinton/absps/momentum.pdf
     """
 
     def __init__(self, params, lr=required, momentum=MOMENTUM_MIN, dampening=DAMPENING_DEFAULT,
