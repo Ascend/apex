@@ -6,23 +6,23 @@
 
 Apex Patch以代码patch的形式发布，用户通过对原始Apex进行patch，可以在华为昇腾AI处理器上，使用Apex的自动混合精度训练功能进行模型训练，提升AI模型的训练效率，同时保持模型的精度和稳定性。此外，Apex-patch额外提供了如梯度融合、融合优化器等，以提升部分场景下模型在昇腾NPU上的训练效率，供用户选择使用。
 
-### 1.2 Ascend Apex代码目录说明
+### 1.2 Apex-patch代码目录说明
 
    ```
     ├── Apex
-      ├──patch
-           ├──npu.patch             # Ascend Apex对于原生Apex的patch文件，用于原生Apex中混合精度等功能基于昇腾AI处理器的适配          
-      ├──scripts                    # Ascend Apex的构建脚本目录
-      ├──src
-           ├──apex
+        ├──patch
+            ├──npu.patch             # Ascend Apex对于原生Apex的patch文件，用于原生Apex中混合精度等功能基于昇腾AI处理器的适配
+        ├──scripts                    # Ascend Apex的构建脚本目录
+        ├──src
+            ├──apex
                 ├──contrib          # 提供Tensor融合的Python API，供融合优化器使用
                 ├──optimizers       # 融合优化器的实现，部分场景下发挥昇腾的算力
-           ├──csrc/combine_tensors  # 提供Tensor融合的C++接口
-      ├──tests                      # 测试用例
-      ├──LICENSE
+            ├──csrc/combine_tensors  # 提供Tensor融合的C++接口
+        ├──tests                      # 测试用例
+        ├──LICENSE
    ```
 
-### 1.3 Ascend Apex已支持特性
+### 1.3 Apex-patch已支持特性
 
 - [x] O1/O2自动混合精度模式
 - [x] 动态/静态 loss scale
@@ -43,7 +43,7 @@ optimzier = torch.optim.SGD(model.parameters(), lr=1e-3)
 model, optimizer = amp.initialize(model, optimizer, opt_level='O1')
 ...
 with amp.scale_loss(loss, optimizer) as scaled_loss:
-  scaled_loss.backward()
+  scaled_loss.backward()
 ...
 ```
 
@@ -56,10 +56,10 @@ with amp.scale_loss(loss, optimizer) as scaled_loss:
 model = torch.nn.Linear(D_in, D_out).cuda()
 optimzier = torch.optim.SGD(model.parameters(), lr=1e-3)
 
-model, optimizer = amp.initialize(model, optimizer, opt_level='O1', combine_grad=True)  # 增加combine_grad参数
+model, optimizer = amp.initialize(model, optimizer, opt_level='O1', combine_grad=True)  # 增加combine_grad参数
 ...
 with amp.scale_loss(loss, optimizer) as scaled_loss:
-  scaled_loss.backward()
+  scaled_loss.backward()
 ...
 ```
 
@@ -73,10 +73,9 @@ optimzier = apex.optimizers.NpuFusedSGD(model.parameters(), lr=1e-3) # 使用ape
 model, optimizer = amp.initialize(model, optimizer, opt_level='O1', combine_grad=True)
 ...
 with amp.scale_loss(loss, optimizer) as scaled_loss:
-  scaled_loss.backward()
+  scaled_loss.backward()
 ...
 ```
-
 
 ## 二、生成全量代码及编译、安装
 
@@ -84,13 +83,12 @@ with amp.scale_loss(loss, optimizer) as scaled_loss:
 
 建议用户以非root用户做环境的安装，避免不必要的安全风险
 
-### 2.1 获取昇腾适配的Ascend apex源码
+### 2.1 获取昇腾适配的Apex-patch源码
 
 ```
 git clone -b master https://gitee.com/ascend/apex.git
 cd apex/
 ```
-
 
 ### 2.2 编译apex的二进制包
 
@@ -101,7 +99,6 @@ cd apex/
 bash scripts/build.sh --python=3.7
 ```
 生成的二进制包在apex/dist目录下
-
 
 ### 2.3 安装
 
@@ -116,17 +113,19 @@ pip3 install --upgrade apex-0.1+ascend-{version}.whl version代表python版本�
 
 ##### 2.4.1 安全风险提示
 
-Ascend apex通过patch方式源码发布，仅对patch代码安全负责。
+Apex-patch通过patch方式源码发布，仅对patch代码安全负责。
 
-##### 2.4.2 权限相关说明
+建议您务必对模型训练相关文件（如数据集、配置文件、源代码、checkpoint等）做好权限管理，避免文件被恶意篡改、破坏业务进行等风险，比如可以控制为同组/其他用户仅有只读权限。
 
-- 运行程序前，建议用户对训练所需文件做好权限控制等安全措施，请勿使用管理员账户安装运行，权限建议设置为 750，文件权限建议设置为 640。
+##### 2.4.2 权限风险提示
 
+- Linux 系统的 umask 值建议不低于027。
+- 不建议使用管理员账户安装运行，建议安装完成后对安装目录文件做好权限管控，文件及文件夹权限建议设置为 550。
+- 如需要保存安装日志，可在安装时对标准输出进行重定向， 重定向文件做好权限管控。
+- 运行程序前，建议用户对训练所需文件，模型脚本、权重等做好权限控制等安全措施，权限建议设置为 640。
 - 在多用户共享数据集的场景下，请根据需求最小化权限设置所需的文件夹以及文件的读写权限等，避免出现非法访问等安全问题。
-
-- 对于涉及隐私数据、商业资产等敏感文件，建议用户做好安全防护和权限控制，避免隐私泄露造成安全风险。
-
-- 对于涉及到使用 C++ 动态编译特性的场景，建议打开 ASLR （地址空间配置随机加载）以及对编译后的 SO 文件开启 strip（移除调试符号信息），减少程序的暴露面。 因编译由 DeepSpeed 原生框架负责且无此类配置选项，故需用户自行开启，开启方法参考下方章节。
+- 原生框架中，在使用某些特定特性时，可能会在`~/.cache`文件夹下生成临时文件，建议用户也应对`~/.cache`文件夹做好权限控制，避免安全风险。
+- 对于涉及到使用 C++ 动态编译特性的场景，建议打开 ASLR （地址空间配置随机加载）以及对编译后的 SO 文件开启 strip（移除调试符号信息），减少程序的暴露面。 因Apex-patch源码发布由用户自行编译，故需用户自行开启此类选项，开启方法参考下方章节。
 
 ##### 2.4.3 打开 ASLR
 
@@ -140,10 +139,9 @@ echo 2 > /proc/sys/kernel/randomize_va_space
 strip -s /PATH/change_data_ptr.{version}.so
 ```
 
+## 三、接口清单
 
-## 三、接口说明
-
-原生API及参数说明请参考`https://nvidia.github.io/apex/amp.html`， 这里仅对Ascend Apex新增接口、新增参数进行说明。
+原生API及参数说明请参考`https://nvidia.github.io/apex/amp.html`， 这里仅对Apex-patch新增接口、新增参数进行说明。
 
 ### 3.1 apex.amp
 
@@ -188,7 +186,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
-- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
+- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
 - eps - 防止除0，提高数值稳定性 （默认值：1e-8）
 - weight_decay - 权重衰减（默认值：0）
 - amsgrad - 是否使用AMSGrad（默认值：False）
@@ -197,7 +195,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
-- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
+- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
 - eps - 防止除0，提高数值稳定性 （默认值：1e-8）
 - weight_decay - 权重衰减（默认值：0）
 - amsgrad - 是否使用AMSGrad（默认值：False）
@@ -206,7 +204,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
-- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
+- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
 - eps - 分母防除0项，提高数值稳定性 （默认值：1e-8）
 - weight_decay - 权重衰减（默认值：0）
 - delta - 余弦相似度阈值（默认值：0.1）
@@ -238,7 +236,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 
 - params - 模型参数或模型参数组
 - lr - 学习率（默认值：1e-3）
-- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
+- betas -  用于计算梯度及其平方的运行平均值的系数（默认值：（0.9，0.999））
 - eps - 分母防除0项，提高数值稳定性（默认值：1e-8）
 - weight_decay - 权重衰减（默认值：0）
 - adam - 将strust_ratio设置为1，退化为Adam（默认值：False）
@@ -247,7 +245,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 
 - params - 模型参数或模型参数组
 - lr - 学习率。（默认值：1e-3）
-- betas -  用于计算梯度及其平方的运行平均值的系数。 （默认值：（0.9，0.999））
+- betas -  用于计算梯度及其平方的运行平均值的系数。 （默认值：（0.9，0.999））
 - eps - 分母防除0项，提高数值稳定性（默认值：1e-8）
 - weight_decay - 权重衰减（默认值：0）
 - adam - 将strust_ratio设置为1，退化为Adam（默认值：False）
@@ -271,7 +269,7 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 - eps - 分母防除0项，提高数值稳定性（默认值：1e-10）
 - weight_decay - 权重衰减（默认值：0）
 - momentum - 动量因子（默认值：0）
-- centered -  计算中心RMSProp（默认值：False）
+- centered -  计算中心RMSProp（默认值：False）
 - decoupled_decay - 权重衰减仅作用于参数（默认值：False）
 - lr_in_momentum - 计算动量buffer时使用lr（默认值：True）
 
@@ -286,48 +284,51 @@ API及参数说明请参考`https://nvidia.github.io/apex/amp.html`，Ascend Ape
 在使用融合优化器时，该接口等价于`torch.nn.utils.clip_grad_norm_(parameters, max_norm, norm_type=2.0)`
 
 
-
-## 四、Ascend Apex配套软件
+## 四、Apex-patch配套软件
 
 | AscendPyTorch版本 | 支持PyTorch版本 | Pytorch Gitee分支名称 | Apex Gitee分支名称 |
 | :---------------- | :--------------- | :--------------------- | :----------------- |
-| 2.0.2             | 1.5.0.post2      | 2.0.2.tr5             | 2.0.2.tr5          |
-| 2.0.3             | 1.5.0.post3      | 2.0.3.tr5             | 2.0.3.tr5          |
-| 2.0.4             | 1.5.0.post4      | 2.0.4.tr5             | 2.0.4.tr5          |
-| 3.0.rc1           | 1.5.0.post5      | v1.5.0-3.0.rc1        | v1.5.0-3.0.rc1     |
-| 3.0.rc1           | 1.8.1.rc1        | v1.8.1-3.0.rc1        | v1.8.1-3.0.rc1     |
-| 3.0.rc2           | 1.5.0.post6      | v1.5.0-3.0.rc2        | v1.5.0-3.0.rc2     |
-| 3.0.rc2           | 1.8.1.rc2        | v1.8.1-3.0.rc2        | v1.8.1-3.0.rc2     |
-| 3.0.rc3           | 1.5.0.post7      | v1.5.0-3.0.rc3        | v1.5.0-3.0.rc3     |
-| 3.0.rc3           | 1.8.1.rc3        | v1.8.1-3.0.rc3        | v1.8.1-3.0.rc3     |
-| 3.0.rc3           | 1.11.0.rc1 (beta)| v1.11.0-3.0.rc3       | v1.11.0-3.0.rc3    |
-| 3.0.0             | 1.5.0.post8      | v1.5.0-3.0.0          | v1.5.0-3.0.0       |
-| 3.0.0             | 1.8.1            | v1.8.1-3.0.0          | v1.8.1-3.0.0       |
-| 3.0.0             | 1.11.0.rc2 (beta)| v1.11.0-3.0.0         | v1.11.0-3.0.0      |
-| 5.0.rc1           | 1.8.1.post1, 1.11.0  | v1.8.1-5.0.rc1, v1.11.0-5.0.rc1 | 5.0.rc1     |
-| 5.0.rc2           | 1.8.1.post2, 1.11.0, 2.0.1.rc1  | v1.8.1-5.0.rc2, v1.11.0-5.0.rc2 | 5.0.rc2 |
-| 5.0.rc3           | 1.11.0, 2.0.1.rc1  | v1.11.1-5.0.rc3, v2.0.1-5.0.rc3 | 5.0.rc3 |
+| 2.0.2             | 1.5.0.post2      | 2.0.2.tr5             | 2.0.2.tr5          |
+| 2.0.3             | 1.5.0.post3      | 2.0.3.tr5             | 2.0.3.tr5          |
+| 2.0.4             | 1.5.0.post4      | 2.0.4.tr5             | 2.0.4.tr5          |
+| 3.0.rc1           | 1.5.0.post5      | v1.5.0-3.0.rc1        | v1.5.0-3.0.rc1     |
+| 3.0.rc1           | 1.8.1.rc1        | v1.8.1-3.0.rc1        | v1.8.1-3.0.rc1     |
+| 3.0.rc2           | 1.5.0.post6      | v1.5.0-3.0.rc2        | v1.5.0-3.0.rc2     |
+| 3.0.rc2           | 1.8.1.rc2        | v1.8.1-3.0.rc2        | v1.8.1-3.0.rc2     |
+| 3.0.rc3           | 1.5.0.post7      | v1.5.0-3.0.rc3        | v1.5.0-3.0.rc3     |
+| 3.0.rc3           | 1.8.1.rc3        | v1.8.1-3.0.rc3        | v1.8.1-3.0.rc3     |
+| 3.0.rc3           | 1.11.0.rc1 (beta)| v1.11.0-3.0.rc3       | v1.11.0-3.0.rc3    |
+| 3.0.0             | 1.5.0.post8      | v1.5.0-3.0.0          | v1.5.0-3.0.0       |
+| 3.0.0             | 1.8.1            | v1.8.1-3.0.0          | v1.8.1-3.0.0       |
+| 3.0.0             | 1.11.0.rc2 (beta)| v1.11.0-3.0.0         | v1.11.0-3.0.0      |
+| 5.0.rc1           | 1.8.1.post1, 1.11.0  | v1.8.1-5.0.rc1, v1.11.0-5.0.rc1 | 5.0.rc1     |
+| 5.0.rc2           | 1.8.1.post2, 1.11.0, 2.0.1.rc1  | v1.8.1-5.0.rc2, v1.11.0-5.0.rc2 | 5.0.rc2 |
+| 5.0.rc3           | 1.11.0, 2.0.1.rc1  | v1.11.1-5.0.rc3, v2.0.1-5.0.rc3 | 5.0.rc3 |
 
+## 五、附录
 
-### 五、附录
+##### 5.1 公网地址
 
-##### 5.1 公网地址说明
-
-|      类型      |          文件名          |             公网IP地址/公网URL地址/域名/邮箱地址             |          用途说明           |
+|      类型      |          文件名          |             公网IP地址/公网URL地址/域名/邮箱地址             |          用途说明           |
 | :------------: | :----------------------: | :----------------------------------------------------------: | :-------------------------: |
-|  开源代码  |      scripts/build.sh       |          https://github.com/NVIDIA/apex.git          | 构建脚本中拉取原生Apex源码，结合Ascend Apex patch构建安装包 |
+|  开源代码  |      scripts/build.sh       |          https://github.com/NVIDIA/apex.git          | 构建脚本中拉取原生Apex源码，结合Ascend Apex patch构建安装包 |
 
 ##### 5.2 文件权限清单
 
 建议用户根据自身需要，参考此清单对各类文件进行加固:
 
-|      类型      | linux权限参考值 |                       备注                       |
+|      类型      | linux权限参考值 |                       备注                       |
 | :------------: | :-------------: | :----------------------------------------------: |
-| 文件夹 / 目录  | 750 (rwxr-x---) |               对于共享目录可为755                |
-|   数据集文件   | 640 (rw-r-----) |            对于共享数据集文件可为644             |
-| checkpoint文件 | 640 (rw-r-----) |                                                  |
-|    程序文件    | 440 (r--r-----) | 除非开发调试场景，正常运行时程序文件不应再次修改 |
-|   可执行脚本   | 750 (rwxr-x---) |                                                  |
+| 文件夹 / 目录  | 750 (rwxr-x---) |               对于共享目录可为755                |
+|   数据集文件   | 640 (rw-r-----) |            对于共享数据集文件可为644             |
+| checkpoint文件 | 640 (rw-r-----) |                                                  |
+|    程序文件    | 440 (r--r-----) | 除非开发调试场景，正常运行时程序文件不应再次修改 |
+|   可执行脚本   | 750 (rwxr-x---) |                                                  |
 
-##### 5.3 通信矩阵说明
-本插件不涉及端口侦听等相关行为，相关端口由用户在模型脚本指定调用原生接口开启，建议用户注意做好安全防护，单机训练的情况下请勿绑定全局端口。
+##### 5.3 通信矩阵
+
+本插件不涉及端口开放、侦听等相关行为，相关端口行为由用户在模型脚本调用Pytorch原生接口开启，具体通信矩阵可参考 [torch_npu](https://gitee.com/ascend/pytorch/blob/master/README.zh.md)，建议用户注意做好安全防护，单机训练的情况下请勿绑定全局端口。
+
+##### 5.4 资源使用
+
+建议您根据自身运行环境资源状况，进行训练配置的设定与数据集的准备，若与资源状况不匹配，比如数据集的size超出内存容量/NPU存储容量等，那么Pytorch及相关三方库进程会直接退出，并自动释放占用的资源。
