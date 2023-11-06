@@ -40,7 +40,7 @@ Apex Patch以代码patch的形式发布，用户通过对原始Apex进行patch�
 
 *推荐使用docker，在容器内编译：[参考链接](https://gitee.com/ascend/apex/tree/master/scripts/docker/README.md)
 
-建议用户以非root用户做环境的安装。若使用容器环境编译，请用户关注容器挂载目录安全性，避免不必要的安全问题。
+建议用户以非root用户做环境的安装。若使用容器环境编译，建议使用普通用户，本仓库提供的Dockerfile仅供参考。请用户关注容器挂载目录安全性，避免系统路径，推荐只挂载业务路径，避免不必要的安全问题。
 
 ### 2.1 获取昇腾适配的Apex-patch源码
 
@@ -79,6 +79,8 @@ Apex及Apex-patch的卸载只需执行命令：
   ```python
   pip3 uninstall apex
   ```
+
+如需要保存卸载日志，可在pip3 install命令后面加上参数 `--log <PATH>`，并对您指定的目录`<PATH>`做好权限管控。
 
 ### 2.4 安全加固（可选）
 
@@ -392,7 +394,7 @@ opt = apex.optimizers.NpuFusedSGD(model.parameters(), lr=0.1, momentum=0.9, weig
 
 ##### 6.2 通信矩阵
 
-本插件不涉及端口开放、监听等相关行为，相关端口行为由用户在模型脚本调用Pytorch原生接口开启，具体通信矩阵可参考 [torch_npu](https://gitee.com/ascend/pytorch/blob/master/README.zh.md)，建议用户注意做好安全防护。
+本插件不涉及端口开放、监听等相关行为，相关端口行为由用户在模型脚本调用Pytorch原生接口开启，具体通信矩阵可参考 [torch_npu](https://gitee.com/ascend/pytorch/)，建议用户注意做好安全防护。
 
 ##### 6.3 资源使用
 
