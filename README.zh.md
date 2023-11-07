@@ -51,7 +51,7 @@ cd apex/
 
 ### 2.2 编译apex的二进制包
 
-1、请确保torch已安装，setuptools版本小于等于65.7.0（不满足时执行pip install setuptools==41.2.0）
+1、请确保torch已安装，setuptools版本小于等于65.7.0。推荐使用65.7.0，若安装其它版本请用户自行确保对应版本无重大漏洞。
 
 2、执行（支持python3.7-3.10，确保python3.x命令存在）
 ```
