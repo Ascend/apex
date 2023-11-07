@@ -21,16 +21,16 @@ RUN mkdir /root/.pip \
 
 # Install pip package(build)
 RUN pip3.7 install pyyaml  \
-    && pip3.7 install --force-reinstall setuptools==41.2.0
+    && pip3.7 install --force-reinstall setuptools==65.7.0
 
 RUN pip3.8 install pyyaml  \
-    && pip3.8 install --force-reinstall setuptools==41.2.0
+    && pip3.8 install --force-reinstall setuptools==65.7.0
 
 RUN pip3.9 install pyyaml  \
-    && pip3.9 install --force-reinstall setuptools==41.2.0
+    && pip3.9 install --force-reinstall setuptools==65.7.0
 
 RUN pip3.10 install pyyaml  \
-    && pip3.10 install --force-reinstall setuptools==41.2.0
+    && pip3.10 install --force-reinstall setuptools==65.7.0
 
 WORKDIR /home
 
