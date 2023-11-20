@@ -20,10 +20,11 @@ docker run -it -v /{code_path}/apex:/home/apex manylinux-builder:v1 bash
 ```
 **Install torch**
 
-Take Python 3.8 as an example
+Take Python 3.8 and torch 2.1.0 as an example
 ```Shell
-pip3.8 install torch
+pip3.8 install torch==2.1.0
 # Reference url: https://pytorch.org/get-started/previous-versions/
+# Please modify the installation commands based on the torch version
 ```
 **Compile apex**
 ```Shell
